@@ -1,0 +1,49 @@
+# Full local stack: MySQL (control + per-tenant databases) and the web app
+# (Flask API + built React frontend, served by gunicorn).
+#
+#   cp .env.example .env        # set SECRET_KEY and the Google OAuth credentials
+#   docker compose up --build
+#   docker compose exec web python scripts/create_super_admin.py you@example.com "Your Name"
+#
+# Then open http://localhost:5050 and sign in with that Google account.
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: clasificador_control
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      # Injected at runtime, never baked into the image (see .dockerignore).
+      - path: .env
+        required: false
+    environment:
+      FLASK_HOST: 0.0.0.0
+      # The app creates one database per tenant, so it needs a user allowed to
+      # CREATE DATABASE (root is fine for local use; use a dedicated user in production).
+      CONTROL_DB_URL: ${CONTROL_DB_URL:-mysql+mysqlconnector://root:${MYSQL_ROOT_PASSWORD:-root}@db:3306/clasificador_control}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${FLASK_PORT:-5050}:${FLASK_PORT:-5050}"
+    volumes:
+      # Uploaded Excel files are kept as an audit trail (see webapp/api.py).
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

@@ -1,0 +1,732 @@
+openapi: 3.0.3
+info:
+  title: Estia API
+  version: 1.0.0
+  description: |
+    REST API of Estia (Smart Text Intelligence Analytics): ingests WhatsApp chatbot CDR exports (Excel), structures them into
+    conversations and classifies each one with a rules-first / AI-fallback cascade.
+
+    **Authentication.** Users sign in with Google OAuth (`/api/auth/google/login`). The backend then keeps
+    a signed, HTTP-only Flask session cookie (`session`); every other endpoint requires it.
+
+    **Multi-tenancy.** Each client (tenant) has its own database. Data endpoints operate on the
+    *active client* of the session: users with exactly one client use it implicitly; super admins and
+    users with several clients pick one with `POST /api/auth/session/cliente-activo`.
+
+    Field names are in Spanish because they mirror the database schema
+    (`categoria` = category, `campana` = campaign, `cliente` = client/tenant, `desde`/`hasta` = from/to).
+servers:
+  - url: /
+security:
+  - sessionCookie: []
+tags:
+  - name: Auth
+    description: Google sign-in, current user and active-client selection.
+  - name: Conversations
+    description: Upload CDR files, browse, filter and export classified conversations.
+  - name: Analytics
+    description: Dashboard metrics and classification catalogs.
+  - name: Admin
+    description: Tenant, campaign and user management (permission-based access).
+
+paths:
+  /api/auth/google/login:
+    get:
+      tags: [Auth]
+      summary: Start the Google OAuth flow
+      security: []
+      responses:
+        "302": { description: "Redirect to Google's consent screen." }
+  /api/auth/google/callback:
+    get:
+      tags: [Auth]
+      summary: Google OAuth callback
+      description: Creates the session when the Google email belongs to an active, pre-registered user.
+      security: []
+      responses:
+        "302": { description: "Signed in; redirects to the web app." }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Sign out (clears the session)
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user, permissions and active client
+      responses:
+        "200":
+          description: The signed-in user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/auth/session/cliente-activo:
+    post:
+      tags: [Auth]
+      summary: Select the active client for this session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cliente_id: { type: integer, nullable: true, description: "`null` clears the selection." }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/upload:
+    post:
+      tags: [Conversations]
+      summary: Upload a CDR Excel file
+      description: |
+        Validates and imports the file into the active client's database (idempotent: re-uploading the same
+        file creates no duplicates) and starts the classification in a background thread.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, campana_id]
+              properties:
+                file: { type: string, format: binary, description: "CDR export (.xlsx)." }
+                campana_id: { type: integer, description: "Campaign the import belongs to." }
+      responses:
+        "200":
+          description: Import report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportReport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/analyze/status:
+    get:
+      tags: [Conversations]
+      summary: Progress of the background classification run
+      responses:
+        "200":
+          description: Current (or last) run of the active client.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalysisStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/campaigns:
+    get:
+      tags: [Conversations]
+      summary: Campaigns of the active client
+      responses:
+        "200":
+          description: Campaign list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id_campana: { type: integer }
+                    nombre_campana: { type: string }
+                    estado: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/conversations:
+    get:
+      tags: [Conversations]
+      summary: List conversations (filtered, paginated)
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/categoria"
+        - $ref: "#/components/parameters/desde"
+        - $ref: "#/components/parameters/hasta"
+        - $ref: "#/components/parameters/flag"
+        - $ref: "#/components/parameters/iniciada_por"
+        - $ref: "#/components/parameters/contiene_array"
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: One page of conversations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ConversationSummary" } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  page_size: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/conversations/export:
+    get:
+      tags: [Conversations]
+      summary: Export the filtered conversations to Excel
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/categoria"
+        - $ref: "#/components/parameters/desde"
+        - $ref: "#/components/parameters/hasta"
+        - $ref: "#/components/parameters/flag"
+        - $ref: "#/components/parameters/iniciada_por"
+        - $ref: "#/components/parameters/contiene_array"
+      responses:
+        "200":
+          description: Excel workbook with one row per conversation and one column per classification signal.
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/conversations/{session_id}:
+    get:
+      tags: [Conversations]
+      summary: Full transcript and classification of one conversation
+      parameters:
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Conversation transcript.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transcript" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/dashboard:
+    get:
+      tags: [Analytics]
+      summary: Dashboard metrics
+      description: Category distribution, business indicators and their trend vs. the previous period, classification method breakdown and daily trend.
+      parameters:
+        - $ref: "#/components/parameters/desde"
+        - $ref: "#/components/parameters/hasta"
+      responses:
+        "200":
+          description: Dashboard payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  category_counts: { type: object, additionalProperties: { type: integer } }
+                  subcategory_counts: { type: object, additionalProperties: { type: integer } }
+                  category_counts_trend: { $ref: "#/components/schemas/Trend" }
+                  method_counts:
+                    type: object
+                    description: Conversations classified by `RULE` vs `AI`.
+                    additionalProperties: { type: integer }
+                  business_indicators: { type: object, additionalProperties: { type: integer } }
+                  business_indicators_trend: { $ref: "#/components/schemas/Trend" }
+                  daily_trend: { type: array, items: { type: object, additionalProperties: true } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/categorias:
+    get:
+      tags: [Analytics]
+      summary: Category catalog of the active client
+      description: Union of the categories of every campaign schema, plus `SIN_ANALIZAR` (not analyzed yet).
+      responses:
+        "200":
+          description: Categories.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Categoria" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/subcategorias:
+    get:
+      tags: [Analytics]
+      summary: Subcategory catalog of the active client
+      responses:
+        "200":
+          description: Subcategories and their column label.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  etiqueta: { type: string, example: Subcategory }
+                  items: { type: array, items: { $ref: "#/components/schemas/Categoria" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/admin/clientes:
+    get:
+      tags: [Admin]
+      summary: List clients (tenants)
+      description: "Requires permission `clientes.crear`."
+      responses:
+        "200":
+          description: Clients.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Cliente" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Admin]
+      summary: Create a client and provision its database
+      description: "Creates a dedicated database for the tenant and applies the schema. Requires `clientes.crear`."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre_cliente]
+              properties:
+                nombre_cliente: { type: string, example: Acme Retail }
+      responses:
+        "201":
+          description: Created client.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cliente" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/admin/clientes/{id_cliente}:
+    patch:
+      tags: [Admin]
+      summary: Rename or (de)activate a client
+      description: "Requires `clientes.editar`."
+      parameters:
+        - { name: id_cliente, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre_cliente: { type: string }
+                activo: { type: boolean }
+      responses:
+        "200":
+          description: Updated client.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cliente" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/roles:
+    get:
+      tags: [Admin]
+      summary: List roles
+      description: "Requires `usuarios.crear`."
+      responses:
+        "200":
+          description: Roles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id_rol: { type: integer }
+                    nombre_rol: { type: string, enum: [super_admin, admin, user] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/admin/usuarios:
+    get:
+      tags: [Admin]
+      summary: List users (admins only see users of their own clients)
+      description: "Requires `usuarios.crear`."
+      responses:
+        "200":
+          description: Users.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Usuario" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Admin]
+      summary: Pre-register a user (they sign in later with Google)
+      description: "Requires `usuarios.crear`. Admins can only assign their own clients."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre_usuario, email]
+              properties:
+                nombre_usuario: { type: string }
+                email: { type: string, format: email }
+                id_rol: { type: integer }
+                id_clientes: { type: array, items: { type: integer } }
+      responses:
+        "201":
+          description: Created user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Usuario" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/admin/usuarios/{id_usuario}:
+    patch:
+      tags: [Admin]
+      summary: Update a user's name, role, clients or status
+      description: "Requires `usuarios.editar`."
+      parameters:
+        - { name: id_usuario, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre_usuario: { type: string }
+                id_rol: { type: integer }
+                id_clientes: { type: array, items: { type: integer } }
+                activo: { type: boolean }
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Usuario" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/campanas:
+    get:
+      tags: [Admin]
+      summary: List the campaigns of a client
+      description: "Requires `campanas.crear`."
+      parameters:
+        - { name: cliente_id, in: query, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Campaigns with their resolved configuration.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Campana" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Admin]
+      summary: Create a campaign
+      description: "`configuracion` is optional; missing keys fall back to the default rules. Requires `campanas.crear`."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cliente_id, nombre_campana]
+              properties:
+                cliente_id: { type: integer }
+                nombre_campana: { type: string }
+                configuracion: { $ref: "#/components/schemas/CampanaConfiguracion" }
+      responses:
+        "201":
+          description: Created campaign.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campana" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/campanas/{id_campana}:
+    patch:
+      tags: [Admin]
+      summary: Update a campaign's name or configuration
+      parameters:
+        - { name: id_campana, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cliente_id]
+              properties:
+                cliente_id: { type: integer }
+                nombre_campana: { type: string }
+                configuracion: { $ref: "#/components/schemas/CampanaConfiguracion" }
+      responses:
+        "200":
+          description: Updated campaign.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campana" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/campanas/generar-esquema:
+    post:
+      tags: [Admin]
+      summary: Generate a classification schema from a plain-language description (LLM)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt, cliente_id]
+              properties:
+                prompt: { type: string, example: "I sell online courses. I want to know who enrolled and who only asked the price." }
+                cliente_id: { type: integer }
+      responses:
+        "200":
+          description: Proposed schema (validated before being returned).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  esquema_clasificacion: { $ref: "#/components/schemas/EsquemaClasificacion" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502": { description: "The LLM call failed or returned an invalid schema." }
+  /api/admin/uso-ia:
+    get:
+      tags: [Admin]
+      summary: AI token usage and estimated cost of a client
+      description: "Requires `administracion.acceso`."
+      parameters:
+        - { name: cliente_id, in: query, required: true, schema: { type: integer } }
+        - $ref: "#/components/parameters/desde"
+        - $ref: "#/components/parameters/hasta"
+      responses:
+        "200":
+          description: Usage by model and by month.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filas: { type: array, items: { type: object, additionalProperties: true } }
+                  por_mes: { type: array, items: { type: object, additionalProperties: true } }
+                  tokens_totales: { type: integer }
+                  costo_total_usd: { type: number, nullable: true }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/conversaciones:
+    delete:
+      tags: [Admin]
+      summary: Delete every conversation of a client for one date (to re-import it)
+      description: "Destructive. AI usage records are kept. Requires `conversaciones.eliminar`."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cliente_id, fecha]
+              properties:
+                cliente_id: { type: integer }
+                fecha: { type: string, format: date }
+      responses:
+        "200":
+          description: Deleted rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversaciones_eliminadas: { type: integer }
+                  mensajes_eliminados: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Signed Flask session cookie set after Google sign-in.
+  parameters:
+    q: { name: q, in: query, description: "Phone number or SESSION_ID (partial match).", schema: { type: string } }
+    categoria:
+      name: categoria
+      in: query
+      description: Category id; repeat the parameter to filter by several. `SIN_ANALIZAR` selects unclassified conversations.
+      schema: { type: array, items: { type: string } }
+      style: form
+      explode: true
+    desde: { name: desde, in: query, description: "Start date (inclusive).", schema: { type: string, format: date } }
+    hasta: { name: hasta, in: query, description: "End date (inclusive).", schema: { type: string, format: date } }
+    flag: { name: flag, in: query, description: "Business indicator key (e.g. `interesados_confirmados`).", schema: { type: string } }
+    iniciada_por: { name: iniciada_por, in: query, schema: { type: string, enum: [CUSTOMER, BOT] } }
+    contiene_array: { name: contiene_array, in: query, description: "Only conversations whose messages contain the literal \"Array\".", schema: { type: boolean } }
+  responses:
+    Ok:
+      description: Success.
+      content:
+        application/json:
+          schema: { type: object, properties: { ok: { type: boolean, example: true } } }
+    BadRequest:
+      description: Invalid input.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Unauthorized:
+      description: Not signed in.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Forbidden:
+      description: Missing permission, or the resource belongs to another client.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: Resource not found.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: Not authenticated. }
+    Me:
+      type: object
+      properties:
+        id_usuario: { type: integer }
+        nombre_usuario: { type: string }
+        email: { type: string }
+        rol: { type: string }
+        permisos: { type: array, items: { type: string } }
+        es_super_admin: { type: boolean }
+        clientes: { type: array, items: { $ref: "#/components/schemas/ClienteRef" } }
+        cliente_activo: { allOf: [{ $ref: "#/components/schemas/ClienteRef" }], nullable: true }
+    ClienteRef:
+      type: object
+      properties:
+        id_cliente: { type: integer }
+        nombre_cliente: { type: string }
+    Cliente:
+      type: object
+      properties:
+        id_cliente: { type: integer }
+        nombre_cliente: { type: string }
+        db_name: { type: string, example: acme_retail_clasificador_chat }
+        fecha_registro: { type: string, format: date-time, nullable: true }
+        activo: { type: boolean }
+    Usuario:
+      type: object
+      properties:
+        id_usuario: { type: integer }
+        nombre_usuario: { type: string }
+        email: { type: string }
+        rol: { type: object, properties: { id_rol: { type: integer }, nombre_rol: { type: string } } }
+        clientes: { type: array, items: { $ref: "#/components/schemas/ClienteRef" } }
+        fecha_creacion: { type: string, format: date-time, nullable: true }
+        activo: { type: boolean }
+    Campana:
+      type: object
+      properties:
+        id_campana: { type: integer }
+        nombre_campana: { type: string }
+        fecha_inicio: { type: string, format: date-time, nullable: true }
+        estado: { type: string }
+        configuracion: { $ref: "#/components/schemas/CampanaConfiguracion" }
+    CampanaConfiguracion:
+      type: object
+      description: Detection parameters of the rules engine, plus an optional custom classification schema.
+      properties:
+        boton_cupo: { type: string }
+        boton_asesor: { type: string }
+        boton_no_interesado: { type: string }
+        rx_interes_confirmado: { type: string, description: "Regular expression." }
+        rx_encuesta_rechazo: { type: string }
+        rx_bot_no_resolvio: { type: string }
+        rx_autorespondedor: { type: string }
+        cortesias: { type: array, items: { type: string } }
+        esquema_clasificacion: { allOf: [{ $ref: "#/components/schemas/EsquemaClasificacion" }], nullable: true }
+    EsquemaClasificacion:
+      type: object
+      description: Categories, indicators (rule- or AI-evaluated signals) and the decision tree that maps signals to a category.
+      properties:
+        categorias: { type: array, items: { $ref: "#/components/schemas/Categoria" } }
+        indicadores: { type: array, items: { type: object, additionalProperties: true } }
+        arbol_decision:
+          type: array
+          items:
+            type: object
+            properties:
+              condicion: { type: object, additionalProperties: { type: boolean } }
+              categoria: { type: string }
+      additionalProperties: true
+    Categoria:
+      type: object
+      properties:
+        id: { type: string, example: INTERESADO }
+        label: { type: string, example: Interested }
+        color: { type: string, example: "#1baf7a" }
+        orden: { type: integer }
+        ocultar_en_dashboard: { type: boolean }
+    ConversationSummary:
+      type: object
+      properties:
+        session_id: { type: string }
+        customer_phone: { type: string, nullable: true }
+        customer_name: { type: string, nullable: true }
+        started_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+        message_count: { type: integer }
+        session_pattern: { type: string, enum: [REAL, BROADCAST_LONG_NUMERIC, BROADCAST_DOTTED] }
+        iniciada_por: { type: string, enum: [CUSTOMER, BOT, SYSTEM] }
+        contiene_array: { type: boolean }
+        categoria: { type: string, nullable: true }
+        categoria_label: { type: string, nullable: true }
+        subcategoria: { type: string, nullable: true }
+        subcategoria_label: { type: string, nullable: true }
+    Message:
+      type: object
+      properties:
+        sequence_number: { type: integer }
+        timestamp: { type: string, format: date-time }
+        sender: { type: string, enum: [CUSTOMER, BOT, SYSTEM] }
+        sender_label: { type: string }
+        message_type: { type: string, enum: [TEXT, PROACTIVE, SYSTEM_EVENT] }
+        message: { type: string }
+    Transcript:
+      allOf:
+        - $ref: "#/components/schemas/ConversationSummary"
+        - type: object
+          properties:
+            conn_id_count: { type: integer, description: "Number of chat segments (CONN_IDs)." }
+            messages: { type: array, items: { $ref: "#/components/schemas/Message" } }
+            metodo: { type: string, enum: [RULE, AI], nullable: true }
+            justificacion: { type: string, nullable: true, description: "AI rationale, when AI classified it." }
+            indicadores: { type: array, items: { type: object, additionalProperties: true } }
+    ImportReport:
+      type: object
+      properties:
+        file_name: { type: string }
+        status: { type: string, enum: [COMPLETED, COMPLETED_WITH_WARNINGS] }
+        rows_received: { type: integer }
+        rows_processed: { type: integer }
+        rows_error: { type: integer }
+        conversations_created: { type: integer }
+        conversations_updated: { type: integer }
+        messages_created: { type: integer }
+        messages_skipped_duplicate: { type: integer }
+        customer_messages: { type: integer }
+        bot_messages: { type: integer }
+        system_messages: { type: integer }
+        warnings: { type: array, items: { type: string } }
+        row_errors:
+          type: array
+          items:
+            type: object
+            properties:
+              source_row: { type: integer }
+              error_type: { type: string }
+              error_message: { type: string }
+        analysis_started: { type: boolean, description: "False when a run was already in progress." }
+    AnalysisStatus:
+      type: object
+      properties:
+        state: { type: string, enum: [idle, running, done, error] }
+        total: { type: integer }
+        evaluadas: { type: integer, description: "Conversations evaluated so far." }
+        resueltas_por_regla: { type: integer }
+        resueltas_por_ia: { type: integer }
+        pendientes_de_ia: { type: integer }
+        errores: { type: integer }
+        usa_ia: { type: boolean }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+        error_message: { type: string, nullable: true }
+      additionalProperties: true
+    Trend:
+      type: object
+      properties:
+        current: { type: object, additionalProperties: { type: integer } }
+        previous: { type: object, additionalProperties: { type: integer } }

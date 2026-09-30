@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+:root {
+  /* Cromo de la app: antes verde WhatsApp saturado, ahora una paleta neutra
+     tipo Apple (grafito + un acento salvia apagado). Las burbujas de chat de
+     abajo se dejan intactas a propósito — reproducen WhatsApp de verdad, no
+     son parte de la marca de esta app. */
+  --wa-green-dark: #1c1c1e;
+  --wa-green: #3c6e5e;
+  --wa-green-light: #6b9a89;
+  --wa-bubble-out: #dcf8c6;
+  --wa-bubble-in: #ffffff;
+  --wa-chat-bg: #e5ddd5;
+  --wa-page-bg: #f5f5f7;
+
+  --ink-1: #1d1d1f;
+  --ink-2: #6e6e73;
+  --surface-border: rgba(0, 0, 0, 0.06);
+}
+
+body {
+  background: var(--wa-page-bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif;
+  color: var(--ink-1);
+}
+
+/* Superficie base para tarjetas/paneles: esquinas más generosas, sombra en
+   capas suave en vez de un box-shadow duro, borde de un pelo en vez de gris
+   sólido — así las tarjetas se sienten como material físico, no como cajas. */
+.surface {
+  background: #fff;
+  border-radius: 1rem;
+  border: 1px solid var(--surface-border);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px -12px rgba(0, 0, 0, 0.12);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--ink-1);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 999px;
+  transition: background-color 150ms ease-out, opacity 150ms ease-out;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #000;
+}
+.btn-primary:disabled {
+  opacity: 0.45;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: #fff;
+  color: var(--ink-1);
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border);
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: rgba(0, 0, 0, 0.16);
+  background: #fafafa;
+}
+.btn-secondary:disabled {
+  opacity: 0.45;
+}
+
+/* Respuesta instantánea al presionar: feedback en pointer-down, no en el resultado final. */
+button:not(:disabled) {
+  transition: transform 100ms ease-out;
+}
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active {
+    transform: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .glass-surface {
+    background: var(--wa-page-bg) !important;
+    backdrop-filter: none !important;
+  }
+}

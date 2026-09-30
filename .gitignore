@@ -1,0 +1,52 @@
+# --- Secrets / local config ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# --- Local databases ---
+*.db
+*.sqlite3
+
+# --- Runtime data ---
+# Uploaded CDR files are stored here at runtime (audit trail) and contain
+# customer data: never commit them.
+uploads/
+logs/
+*.log
+
+# Only the synthetic sample (scripts/generate_sample_data.py) is versioned;
+# any other spreadsheet dropped in data/ is assumed to hold real data.
+data/*
+!data/samples/
+data/samples/*
+!data/samples/sample_cdr.xlsx
+validacion_ia.xlsx
+~$*.xlsx
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.claude/
+*.swp
+*.tsx.tmp.*
+.DS_Store
+Thumbs.db

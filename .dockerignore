@@ -1,0 +1,35 @@
+# Secretos y config local — nunca deben terminar dentro de la imagen.
+.env
+.env.*
+!.env.example
+
+# Control de versiones / IDE / Claude
+.git
+.gitignore
+.claude
+.pytest_cache
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+htmlcov/
+.coverage
+*.db
+
+# Node — se instala/compila DENTRO de la imagen (etapa frontend-build)
+frontend/node_modules
+frontend/dist
+
+# Datos locales / artefactos que no debe cargar el servidor
+uploads/
+data/samples/*.xlsx
+*.xlsx
+~$*
+
+# Tests y docs (no hacen falta en runtime, reduce el tamaño de la imagen)
+tests/
+docs/
+README.md
