@@ -1,21 +1,64 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { motion } from 'motion/react'
-import { X, Calendar, MessageCircle } from 'lucide-react'
+import { Check, Copy, ListChecks, Maximize2, MessageCircle, X } from 'lucide-react'
 import { fetchConversationDetail, type ConversationTranscript } from '../api/client'
 import CategoryBadge from './CategoryBadge'
-import AnimatedTabUnderline from './AnimatedTabUnderline'
-import { formatDateAndTime, formatDateTime } from '../lib/format'
+import ChatTranscript from './ChatTranscript'
+import SegmentedControl from './SegmentedControl'
+import { formatDate, formatDateTime, formatPhone, formatTime, initials } from '../lib/format'
+import { displayName, metodoLabel } from '../lib/conversation'
 import { slideFromRight, springDrawer } from '../lib/motionPresets'
 
 type Tab = 'conversacion' | 'clasificacion' | 'informacion'
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'conversacion', label: 'Conversation' },
-  { id: 'clasificacion', label: 'Classification' },
-  { id: 'informacion', label: 'Details' },
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'conversacion', label: 'Conversación' },
+  { value: 'clasificacion', label: 'Clasificación' },
+  { value: 'informacion', label: 'Información' },
 ]
 
-export default function ConversationSidePanel({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      title="Copiar teléfono"
+      onClick={() => {
+        navigator.clipboard
+          ?.writeText(text)
+          .then(() => {
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 1200)
+          })
+          .catch(() => {})
+      }}
+      className="p-0.5 rounded text-ink-3 hover:text-accent hover:bg-accent-soft flex"
+    >
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+    </button>
+  )
+}
+
+function InfoCell({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="bg-bg px-3 py-2.5 min-w-0">
+      <div className="text-[11px] text-ink-3 mb-1">{label}</div>
+      {children}
+    </div>
+  )
+}
+
+export default function ConversationSidePanel({
+  sessionId,
+  onClose,
+  overlay = false,
+}: {
+  sessionId: string
+  onClose: () => void
+  /** En pantallas angostas el panel flota sobre la tabla como un cajón en vez de empujarla. */
+  overlay?: boolean
+}) {
   const [transcript, setTranscript] = useState<ConversationTranscript | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('conversacion')
@@ -30,15 +73,16 @@ export default function ConversationSidePanel({ sessionId, onClose }: { sessionI
         if (!cancelled) setTranscript(t)
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the conversation')
+        if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudo cargar la conversación')
       })
     return () => {
       cancelled = true
     }
   }, [sessionId])
 
-  const displayName = transcript?.customer_name ?? transcript?.customer_phone ?? 'Client'
+  const name = transcript ? displayName(transcript) : '…'
   const indicadoresActivos = transcript ? transcript.indicadores.filter((i) => i.valor) : []
+  const iniciadaPor = transcript?.iniciada_por === 'BOT' ? 'Bot' : 'Cliente'
 
   return (
     <motion.aside
@@ -46,125 +90,98 @@ export default function ConversationSidePanel({ sessionId, onClose }: { sessionI
       animate={slideFromRight.animate}
       exit={slideFromRight.exit}
       transition={springDrawer}
-      className="surface overflow-hidden w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 flex flex-col max-h-[calc(100vh-140px)] sticky top-6"
+      className={`w-[440px] max-w-[calc(100%-24px)] shrink-0 flex flex-col bg-surface border border-line-soft rounded-2xl overflow-hidden ${
+        overlay ? 'absolute top-0 right-0 bottom-0 z-10 shadow-[var(--shadow-lg),0_0_0_1px_var(--border-soft)]' : 'relative shadow-card'
+      }`}
     >
-      <div className="px-4 py-3 border-b border-gray-100 flex items-start gap-3">
-        <div className="w-10 h-10 rounded-full bg-[var(--wa-green-light)] text-white flex items-center justify-center font-bold flex-shrink-0">
-          {displayName[0]?.toUpperCase() ?? '?'}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-sm text-gray-800 truncate">{displayName}</div>
-          <div className="text-xs text-gray-500 truncate">{transcript?.customer_phone ?? '-'}</div>
-        </div>
-        {transcript?.categoria !== undefined && transcript && (
-          <div className="flex-shrink-0">
-            <CategoryBadge categoria={transcript.categoria} />
+      <div className="px-[18px] pt-[18px] pb-3.5 flex flex-col gap-3.5 border-b border-line-soft">
+        <div className="flex items-start gap-3">
+          <div className="relative shrink-0">
+            <div className="w-12 h-12 rounded-full bg-accent-soft text-accent-ink flex items-center justify-center text-[17px] font-bold">
+              {transcript ? initials(name, 1) : ''}
+            </div>
+            <span className="absolute -right-0.5 -bottom-0.5 w-[18px] h-[18px] rounded-full bg-[#25d366] border-2 border-surface flex items-center justify-center">
+              <MessageCircle size={9} strokeWidth={3} className="text-white" />
+            </span>
           </div>
-        )}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-        >
-          <X size={18} />
-        </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-base font-bold text-ink tracking-[-.01em] truncate">{name}</div>
+            <div className="flex items-center gap-1.5 mt-[3px] text-[13px] text-ink-2 tabular-nums">
+              {formatPhone(transcript?.customer_phone ?? null)}
+              {transcript?.customer_phone && <CopyButton text={transcript.customer_phone} />}
+            </div>
+          </div>
+          <div className="flex gap-1">
+            <Link
+              to={`/conversations/${encodeURIComponent(sessionId)}`}
+              title="Abrir en página completa"
+              className="btn-icon"
+            >
+              <Maximize2 size={15} />
+            </Link>
+            <button type="button" onClick={onClose} title="Cerrar" className="btn-icon">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-px bg-line-soft border border-line-soft rounded-xl overflow-hidden">
+          <InfoCell label="Categoría">
+            {transcript ? <CategoryBadge categoria={transcript.categoria} size="sm" /> : <span className="text-xs text-ink-3">—</span>}
+          </InfoCell>
+          <InfoCell label="Inicio">
+            <div className="text-[12.5px] font-semibold text-ink whitespace-nowrap">
+              {transcript ? formatDate(transcript.started_at) : '—'}
+            </div>
+            <div className="text-[11.5px] text-ink-2">{transcript ? formatTime(transcript.started_at) : ''}</div>
+          </InfoCell>
+          <InfoCell label="Mensajes">
+            <div className="text-[12.5px] font-semibold text-ink">{transcript?.messages.length ?? '—'}</div>
+            <div className="text-[11.5px] text-ink-2">{transcript ? `Inició: ${iniciadaPor}` : ''}</div>
+          </InfoCell>
+        </div>
+
+        <SegmentedControl options={TABS} value={tab} onChange={setTab} />
       </div>
 
-      {transcript && (
-        <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-4 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <Calendar size={13} />
-            {formatDateTime(transcript.started_at)}
-          </span>
-          <span className="flex items-center gap-1">
-            <MessageCircle size={13} />
-            {transcript.messages.length} mensajes
-          </span>
-        </div>
-      )}
+      <div className="flex-1 min-h-0 overflow-y-auto bg-surface">
+        {error && <p className="text-[13px] text-bad-fg p-[18px]">{error}</p>}
+        {!error && !transcript && <p className="text-[13px] text-ink-3 p-[18px]">Cargando…</p>}
 
-      <div className="px-4 border-b border-gray-100 flex gap-4 text-sm">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`relative py-2 -mb-px transition-colors ${
-              tab === t.id ? 'text-[var(--wa-green-dark)] font-semibold' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t.label}
-            {tab === t.id && (
-              <AnimatedTabUnderline
-                layoutId="side-panel-tab-underline"
-                className="absolute left-0 right-0 -bottom-[1px] h-[2px] bg-[var(--wa-green-dark)] rounded-full"
-              />
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        {error && <p className="text-sm text-red-600 p-4">{error}</p>}
-        {!error && !transcript && <p className="text-sm text-gray-400 p-4">Loading...</p>}
-
-        {transcript && tab === 'conversacion' && (
-          <div className="bg-[var(--wa-chat-bg)] p-3 flex flex-col gap-1.5 min-h-full">
-            {transcript.messages.map((m) => {
-              if (m.sender === 'SYSTEM') {
-                return (
-                  <div
-                    key={m.sequence_number}
-                    className="self-center bg-[#fef6d8] text-[#7a6a2f] text-xs px-3 py-1 rounded-lg my-1.5"
-                  >
-                    {m.message} · {formatDateAndTime(m.timestamp)}
-                  </div>
-                )
-              }
-              const outgoing = m.sender === 'BOT'
-              return (
-                <div key={m.sequence_number} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[85%] min-w-[104px] rounded-lg px-2.5 pt-1.5 pb-5 relative text-sm shadow-sm whitespace-pre-wrap break-words ${
-                      outgoing ? 'bg-[var(--wa-bubble-out)] rounded-tr-sm' : 'bg-[var(--wa-bubble-in)] rounded-tl-sm'
-                    }`}
-                  >
-                    {m.message}
-                    <span className="absolute bottom-1 right-2.5 text-[10px] text-gray-400 whitespace-nowrap">
-                      {formatDateAndTime(m.timestamp)}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+        {transcript && tab === 'conversacion' && <ChatTranscript messages={transcript.messages} customerName={name} />}
 
         {transcript && tab === 'clasificacion' && (
-          <div className="p-4 text-sm space-y-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <CategoryBadge categoria={transcript.categoria} />
-              {transcript.subcategoria_label && (
-                <span className="text-xs rounded-full bg-gray-100 text-gray-700 px-2 py-0.5">
-                  {transcript.subcategoria_label}
-                </span>
-              )}
-              {transcript.metodo && (
-                <span className="text-xs text-gray-400">
-                  {transcript.metodo === 'RULE' ? 'classified by rules' : 'classified by AI'}
-                </span>
-              )}
+          <div className="p-[18px] flex flex-col gap-4 animate-estia-fade">
+            <div className="flex flex-col gap-2.5 p-4 border border-line-soft rounded-xl bg-bg">
+              <div className="flex items-center gap-2 flex-wrap">
+                <CategoryBadge categoria={transcript.categoria} size="lg" />
+                {transcript.subcategoria_label && (
+                  <span className="inline-block px-2.5 py-1 rounded-lg bg-surface border border-line-soft text-ink-2 text-xs font-medium">
+                    {transcript.subcategoria_label}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-ink-2">
+                <ListChecks size={14} className="text-accent" />
+                {metodoLabel(transcript.metodo)}
+              </div>
             </div>
             {transcript.justificacion && (
-              <div className="text-xs text-gray-600 italic bg-gray-50 rounded-lg p-3">{transcript.justificacion}</div>
+              <div>
+                <div className="eyebrow mb-2">Justificación</div>
+                <p className="m-0 text-[13.5px] leading-[1.65] text-ink-2 [text-wrap:pretty]">{transcript.justificacion}</p>
+              </div>
             )}
             <div>
-              <div className="text-xs font-semibold text-gray-500 mb-2">Classification signals</div>
-              <div className="flex flex-wrap gap-2">
-                {indicadoresActivos.length === 0 && <span className="text-gray-400 text-xs">No signals</span>}
+              <div className="eyebrow mb-2">Señales de clasificación</div>
+              <div className="flex flex-wrap gap-1.5">
+                {indicadoresActivos.length === 0 && <span className="text-xs text-ink-3">Sin señales</span>}
                 {indicadoresActivos.map((i) => (
-                  <span key={i.id} className="text-xs bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5 text-gray-600">
+                  <span
+                    key={i.id}
+                    className="inline-flex items-center gap-1.5 px-[11px] py-[5px] rounded-full bg-surface-2 text-ink-2 text-xs font-medium"
+                  >
+                    <Check size={12} strokeWidth={2.5} className="text-accent" />
                     {i.label}
                   </span>
                 ))}
@@ -174,31 +191,20 @@ export default function ConversationSidePanel({ sessionId, onClose }: { sessionI
         )}
 
         {transcript && tab === 'informacion' && (
-          <div className="p-4 text-sm space-y-3">
-            <div>
-              <div className="text-xs text-gray-500">SESSION_ID</div>
-              <div className="font-mono text-xs text-gray-700 break-all">{transcript.session_id}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Phone</div>
-              <div className="text-gray-700">{transcript.customer_phone ?? '-'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Name</div>
-              <div className="text-gray-700">{transcript.customer_name ?? '-'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Start</div>
-              <div className="text-gray-700">{formatDateTime(transcript.started_at)}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">End</div>
-              <div className="text-gray-700">{formatDateTime(transcript.ended_at)}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Segments</div>
-              <div className="text-gray-700">{transcript.conn_id_count}</div>
-            </div>
+          <div className="p-[18px] flex flex-col gap-0.5 animate-estia-fade">
+            {[
+              { k: 'SESSION_ID', v: transcript.session_id, mono: true },
+              { k: 'Teléfono', v: transcript.customer_phone ?? '—' },
+              { k: 'Nombre', v: transcript.customer_name ?? '—' },
+              { k: 'Inicio', v: formatDateTime(transcript.started_at) },
+              { k: 'Fin', v: formatDateTime(transcript.ended_at) },
+              { k: 'Segmentos', v: String(transcript.conn_id_count) },
+            ].map((row) => (
+              <div key={row.k} className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 py-3 border-b border-line-soft items-baseline">
+                <div className="text-xs text-ink-3">{row.k}</div>
+                <div className={`text-[13px] text-ink font-medium break-all ${row.mono ? 'font-mono' : ''}`}>{row.v}</div>
+              </div>
+            ))}
           </div>
         )}
       </div>

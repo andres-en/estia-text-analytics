@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { motion } from 'motion/react'
 import { ChevronDown, FileSpreadsheet, Megaphone, Upload, X } from 'lucide-react'
 import {
   fetchAnalysisStatus,
@@ -9,7 +9,10 @@ import {
   type Campaign,
   type ImportReport,
 } from '../api/client'
-import { materialize, springDrawer, springSettle } from '../lib/motionPresets'
+import { springSettle } from '../lib/motionPresets'
+import { formatNumber } from '../lib/format'
+import Modal from './Modal'
+import Badge from './Badge'
 
 const POLL_MS = 1500
 
@@ -28,7 +31,7 @@ export default function UploadPanel({ onUploaded }: { onUploaded: () => void }) 
 
   const selectFile = (f: File | null) => {
     if (f && !f.name.toLowerCase().endsWith('.xlsx')) {
-      setError('The file must be an .xlsx')
+      setError('El archivo debe ser un .xlsx')
       return
     }
     setError(null)
@@ -79,7 +82,7 @@ export default function UploadPanel({ onUploaded }: { onUploaded: () => void }) 
       onUploaded()
       pollAnalysisStatus()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      setError(e instanceof Error ? e.message : 'Error desconocido')
     } finally {
       setLoading(false)
     }
@@ -90,183 +93,148 @@ export default function UploadPanel({ onUploaded }: { onUploaded: () => void }) 
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="btn-primary text-sm px-4 py-2 flex-shrink-0"
-      >
+      <button type="button" onClick={() => setOpen(true)} className="btn-primary">
         <Upload size={16} />
-        Upload file
+        Cargar archivo
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={springSettle}
-            className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
-            onClick={() => setOpen(false)}
-          >
-            <motion.div
-              initial={materialize.initial}
-              animate={materialize.animate}
-              exit={materialize.exit}
-              transition={springDrawer}
-              className="surface p-5 w-full max-w-lg max-h-[85vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-[var(--wa-green-dark)]">Upload file</h2>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="text-gray-400 hover:text-gray-600">
-                <X size={18} />
-              </button>
-            </div>
+      <Modal open={open} onClose={() => setOpen(false)} className="w-[520px]">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="m-0 text-base font-bold text-ink">Cargar archivo</h2>
+            <p className="mt-1 mb-0 text-[13px] text-ink-2">
+              Sube el Excel exportado del bot; las conversaciones nuevas se clasifican automáticamente.
+            </p>
+          </div>
+          <button type="button" onClick={() => setOpen(false)} aria-label="Cerrar" className="btn-icon -mr-1.5 -mt-1">
+            <X size={16} />
+          </button>
+        </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                  Excel file
-                </label>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    setDragActive(true)
-                  }}
-                  onDragLeave={() => setDragActive(false)}
-                  onDrop={handleDrop}
-                  className={`cursor-pointer border-2 border-dashed rounded-lg px-3 py-2.5 flex items-center gap-2 text-sm transition-colors ${
-                    dragActive
-                      ? 'border-[var(--wa-green)] bg-[var(--wa-green)]/5'
-                      : 'border-gray-300 hover:border-gray-400 bg-gray-50/50'
-                  }`}
-                >
-                  <FileSpreadsheet size={18} className="text-gray-400 flex-shrink-0" />
-                  <span className={`truncate ${file ? 'text-gray-700' : 'text-gray-400'}`}>
-                    {file ? file.name : 'Select an .xlsx file'}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-ink-2">Archivo de Excel</span>
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDragActive(true)
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={handleDrop}
+              className={`cursor-pointer h-10 border border-dashed rounded-[10px] px-3 flex items-center gap-2 text-[13px] transition-colors ${
+                dragActive ? 'border-accent bg-accent-soft' : 'border-line bg-bg hover:border-ink-3'
+              }`}
+            >
+              <FileSpreadsheet size={16} className="text-ink-3 shrink-0" />
+              <span className={`truncate ${file ? 'text-ink' : 'text-ink-3'}`}>{file ? file.name : 'Selecciona un .xlsx'}</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx"
+                onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+            </div>
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-ink-2">Campaña</span>
+            <span className="field relative">
+              <Megaphone size={15} className="text-ink-3 shrink-0" />
+              <select value={campanaId} onChange={(e) => setCampanaId(e.target.value)} className="pr-5">
+                <option value="">Selecciona una campaña…</option>
+                {campaigns.map((c) => (
+                  <option key={c.id_campana} value={c.id_campana}>
+                    {c.nombre_campana}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-2.5 text-ink-3 pointer-events-none" />
+            </span>
+          </label>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleUpload}
+          disabled={!file || !campanaId || loading}
+          className="btn-primary mt-4 w-full"
+        >
+          <Upload size={15} />
+          {loading ? 'Cargando…' : 'Cargar archivo'}
+        </button>
+
+        {error && <p className="text-[13px] text-bad-fg mt-2.5">{error}</p>}
+
+        {report && (
+          <div className="mt-4 pt-4 border-t border-line-soft text-[13px]">
+            <div className="mb-3">
+              <Badge tone={report.status === 'COMPLETED' ? 'ok' : 'warn'}>{report.status}</Badge>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-line-soft border border-line-soft rounded-xl overflow-hidden">
+              {[
+                ['Filas recibidas', report.rows_received],
+                ['Conversaciones nuevas', report.conversations_created],
+                ['Mensajes nuevos', report.messages_created],
+                ['Errores', report.rows_error],
+              ].map(([label, n]) => (
+                <div key={label} className="bg-bg px-3 py-2.5">
+                  <div className="text-[11px] text-ink-3">{label}</div>
+                  <div className="text-[15px] font-bold text-ink tabular-nums">{formatNumber(Number(n))}</div>
+                </div>
+              ))}
+            </div>
+            {report.warnings.length > 0 && (
+              <details className="mt-3 text-xs text-ink-2">
+                <summary className="cursor-pointer">{report.warnings.length} advertencia(s) de calidad de datos</summary>
+                <ul className="list-disc pl-4 mt-1.5 space-y-0.5">
+                  {report.warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+
+        {analysis && (analyzing || analysis.state === 'error') && (
+          <div className="mt-4 pt-4 border-t border-line-soft text-[13px]">
+            {analyzing && (
+              <>
+                <div className="flex items-center justify-between text-xs text-ink-2 mb-1.5">
+                  <span>
+                    Clasificando conversaciones… {analysis.total > 0 ? `${analysis.evaluadas}/${analysis.total}` : ''}
                   </span>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx"
-                    onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
-                    className="hidden"
+                  <span className="tabular-nums">{analysis.total > 0 ? `${progressPct}%` : ''}</span>
+                </div>
+                <div className="w-full h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-accent rounded-full"
+                    animate={{ width: `${analysis.total > 0 ? progressPct : 5}%` }}
+                    transition={springSettle}
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                  Campaign
-                </label>
-                <div className="relative">
-                  <Megaphone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                  <select
-                    value={campanaId}
-                    onChange={(e) => setCampanaId(e.target.value)}
-                    className="w-full appearance-none border border-gray-300 rounded-lg pl-9 pr-8 py-2.5 text-sm text-gray-700 cursor-pointer hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--wa-green)]/30 transition-colors"
-                  >
-                    <option value="">Select a campaign...</option>
-                    {campaigns.map((c) => (
-                      <option key={c.id_campana} value={c.id_campana}>
-                        {c.nombre_campana}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={handleUpload}
-              disabled={!file || !campanaId || loading}
-              className="btn-primary mt-3 w-full text-sm px-4 py-2"
-            >
-              {loading ? 'Loading...' : 'Upload file'}
-            </button>
-
-            {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-
-            {report && (
-              <div className="mt-3 text-sm border-t border-gray-200 pt-3">
-                <span
-                  className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold mb-2 ${
-                    report.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                  }`}
-                >
-                  {report.status}
-                </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-700">
-                  <div>
-                    Rows received: <b>{report.rows_received}</b>
-                  </div>
-                  <div>
-                    New conversations: <b>{report.conversations_created}</b>
-                  </div>
-                  <div>
-                    New messages: <b>{report.messages_created}</b>
-                  </div>
-                  <div>
-                    Errors: <b>{report.rows_error}</b>
-                  </div>
-                </div>
-                {report.warnings.length > 0 && (
-                  <details className="mt-2 text-xs text-gray-500">
-                    <summary className="cursor-pointer">{report.warnings.length} data-quality warning(s)</summary>
-                    <ul className="list-disc pl-4 mt-1">
-                      {report.warnings.map((w, i) => (
-                        <li key={i}>{w}</li>
-                      ))}
-                    </ul>
-                  </details>
+                {analysis.resueltas_por_ia > 0 && (
+                  <p className="text-xs text-ink-3 mt-1.5 mb-0">
+                    {analysis.resueltas_por_regla} por reglas · {analysis.resueltas_por_ia} por IA
+                  </p>
                 )}
-              </div>
+              </>
             )}
-
-            {analysis && (analyzing || analysis.state === 'error') && (
-              <div className="mt-3 text-sm border-t border-gray-200 pt-3">
-                {analyzing && (
-                  <>
-                    <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                      <span>
-                        Classifying conversations...{' '}
-                        {analysis.total > 0 ? `${analysis.evaluadas}/${analysis.total}` : ''}
-                      </span>
-                      <span>{analysis.total > 0 ? `${progressPct}%` : ''}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-[var(--wa-green)]"
-                        animate={{ width: `${analysis.total > 0 ? progressPct : 5}%` }}
-                        transition={springSettle}
-                      />
-                    </div>
-                    {analysis.resueltas_por_ia > 0 && (
-                      <p className="text-xs text-gray-400 mt-1">
-                        {analysis.resueltas_por_regla} by rules · {analysis.resueltas_por_ia} by AI
-                      </p>
-                    )}
-                  </>
-                )}
-                {analysis.state === 'error' && (
-                  <p className="text-sm text-red-600">Classification failed: {analysis.error_message}</p>
-                )}
-              </div>
+            {analysis.state === 'error' && (
+              <p className="text-[13px] text-bad-fg m-0">La clasificación falló: {analysis.error_message}</p>
             )}
-
-            {analysis && analysis.state === 'done' && (
-              <p className="text-xs text-emerald-600 mt-3 border-t border-gray-200 pt-3">
-                Automatic classification finished: {analysis.evaluadas} conversations analyzed
-                {analysis.resueltas_por_ia > 0 ? ` (${analysis.resueltas_por_ia} by AI)` : ''}.
-              </p>
-            )}
-            </motion.div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+
+        {analysis && analysis.state === 'done' && (
+          <p className="text-xs text-ok-fg mt-4 pt-4 mb-0 border-t border-line-soft">
+            Clasificación automática terminada: {analysis.evaluadas} conversaciones analizadas
+            {analysis.resueltas_por_ia > 0 ? ` (${analysis.resueltas_por_ia} por IA)` : ''}.
+          </p>
+        )}
+      </Modal>
     </>
   )
 }

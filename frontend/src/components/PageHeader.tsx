@@ -1,23 +1,29 @@
-import type { LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
 import AccountCluster from './AccountCluster'
 
 interface Props {
-  icon: LucideIcon
   title: string
-  subtitle?: string
+  subtitle?: ReactNode
+  /** Botones propios de la página (exportar, cargar archivo…), a la izquierda del cliente activo. */
+  actions?: ReactNode
 }
 
-export default function PageHeader({ icon: Icon, title, subtitle }: Props) {
+export default function PageHeader({ title, subtitle, actions }: Props) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-6">
-      <div className="flex items-start gap-3">
-        <Icon className="text-gray-400 mt-0.5" size={26} strokeWidth={1.75} />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--ink-1)]">{title}</h1>
-          {subtitle && <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>}
-        </div>
+    <header className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="min-w-0">
+        <h1 className="m-0 text-2xl font-bold tracking-[-.02em] text-ink">{title}</h1>
+        {subtitle && <div className="mt-1 text-[13px] text-ink-2">{subtitle}</div>}
       </div>
-      <AccountCluster />
-    </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {actions && (
+          <>
+            {actions}
+            <span className="w-px h-6 bg-line mx-1.5" />
+          </>
+        )}
+        <AccountCluster />
+      </div>
+    </header>
   )
 }

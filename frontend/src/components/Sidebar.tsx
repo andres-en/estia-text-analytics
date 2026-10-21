@@ -1,20 +1,14 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { motion } from 'motion/react'
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  LayoutDashboard,
-  LogOut,
-  MessageSquare,
-  Settings,
-} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { ChevronLeft, ChevronsUpDown, LayoutDashboard, LogOut, MessageSquare, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { springSettle } from '../lib/motionPresets'
+import { materialize, springPress, springSettle } from '../lib/motionPresets'
+import { initials } from '../lib/format'
+import { rolLabel } from '../lib/roles'
 
 const COLLAPSE_KEY = 'sidebar-collapsed'
-const WIDTH_EXPANDED = 240
+const WIDTH_EXPANDED = 248
 const WIDTH_COLLAPSED = 72
 
 function readStoredCollapsed(): boolean {
@@ -25,20 +19,25 @@ function readStoredCollapsed(): boolean {
   }
 }
 
-function navLinkClass(collapsed: boolean) {
-  return ({ isActive }: { isActive: boolean }) =>
-    `relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-      collapsed ? 'justify-center px-0' : ''
-    } ${isActive ? 'text-[var(--ink-1)] font-semibold' : 'text-gray-500 hover:text-gray-800 hover:bg-black/[0.03]'}`
-}
-
-function SidebarHighlight() {
+function NavItem({ to, end, icon: Icon, label, collapsed }: { to: string; end?: boolean; icon: LucideIcon; label: string; collapsed: boolean }) {
   return (
-    <motion.span
-      layoutId="sidebar-active-highlight"
-      className="absolute inset-0 bg-black/[0.04] rounded-lg -z-10"
-      transition={springSettle}
-    />
+    <NavLink
+      to={to}
+      end={end}
+      title={collapsed ? label : undefined}
+      className={({ isActive }) =>
+        `flex items-center gap-2.5 px-2.5 py-[9px] rounded-[10px] whitespace-nowrap overflow-hidden transition-colors ${
+          isActive ? 'bg-accent-soft text-accent-ink font-semibold' : 'text-ink-2 font-medium hover:bg-surface-2 hover:text-ink'
+        }`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <Icon size={18} strokeWidth={1.8} className={`shrink-0 ${isActive ? 'text-accent' : ''}`} />
+          {!collapsed && <span>{label}</span>}
+        </>
+      )}
+    </NavLink>
   )
 }
 
@@ -61,106 +60,95 @@ export default function Sidebar() {
     navigate('/login')
   }
 
-  const initial = user?.nombre_usuario?.[0]?.toUpperCase() ?? '?'
-  const linkClass = navLinkClass(collapsed)
+  const subtitulo = [user?.cliente_activo?.nombre_cliente, user ? rolLabel(user.rol) : null].filter(Boolean).join(' · ')
 
   return (
     <motion.aside
       animate={{ width: collapsed ? WIDTH_COLLAPSED : WIDTH_EXPANDED }}
+      initial={false}
       transition={springSettle}
-      className="relative shrink-0 h-screen sticky top-0 flex flex-col bg-white border-r border-black/5 px-3 py-4"
+      className="relative shrink-0 h-screen flex flex-col bg-surface border-r border-line-soft pt-5 px-3 pb-3.5 box-border z-30"
     >
       <button
         type="button"
-        onClick={() => setCollapsed((c) => !c)}
-        title={collapsed ? 'Expand menu' : 'Collapse menu'}
-        className="absolute -right-3 top-6 w-6 h-6 rounded-full border border-gray-200 bg-white shadow-sm flex items-center justify-center text-gray-400 hover:text-gray-700 hover:border-gray-300 z-10"
+        onClick={() => {
+          setCollapsed((c) => !c)
+          setMenuOpen(false)
+        }}
+        title={collapsed ? 'Expandir menú' : 'Contraer menú'}
+        className="absolute -right-3 top-7 w-6 h-6 rounded-full border border-line bg-surface text-ink-3 hover:text-ink hover:border-ink-3 flex items-center justify-center shadow-[0_1px_3px_rgba(15,23,42,.08)] z-10"
       >
-        {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+        <ChevronLeft size={13} strokeWidth={2.2} className={`transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`} />
       </button>
 
-      <div className={`flex items-center gap-2.5 mb-6 ${collapsed ? 'justify-center px-0' : 'px-2'}`}>
-        <img src="/logo-estia-icon.png" alt="ESTIA" className="w-9 h-9 object-contain shrink-0" />
+      <div className="flex items-center gap-2.5 px-1.5 mb-7 overflow-hidden">
+        <img src="/logo-estia-icon.png" alt="ESTIA" className="w-8 h-8 object-contain shrink-0" />
         {!collapsed && (
-          <div className="leading-tight whitespace-nowrap">
-            <div className="text-sm font-bold tracking-wide text-[var(--ink-1)]">ESTIA</div>
-            <div className="text-[10px] text-gray-400 -mt-0.5">Conversation Intelligence</div>
+          <div className="leading-[1.15] whitespace-nowrap">
+            <div className="text-[15px] font-bold tracking-[.06em] text-ink">ESTIA</div>
+            <div className="text-[11px] text-ink-3 mt-0.5">Conversation Intelligence</div>
           </div>
         )}
       </div>
 
-      <nav className="flex flex-col gap-1">
-        <NavLink to="/dashboard" className={linkClass} title={collapsed ? 'Dashboard' : undefined}>
-          {({ isActive }) => (
-            <>
-              {isActive && <SidebarHighlight />}
-              <LayoutDashboard size={17} strokeWidth={2} className="shrink-0" />
-              {!collapsed && <span className="whitespace-nowrap">Dashboard</span>}
-            </>
-          )}
-        </NavLink>
-        <NavLink to="/" end className={linkClass} title={collapsed ? 'Conversations' : undefined}>
-          {({ isActive }) => (
-            <>
-              {isActive && <SidebarHighlight />}
-              <MessageSquare size={17} strokeWidth={2} className="shrink-0" />
-              {!collapsed && <span className="whitespace-nowrap">Conversations</span>}
-            </>
-          )}
-        </NavLink>
+      {!collapsed && (
+        <div className="text-[11px] font-medium tracking-[.08em] uppercase text-ink-3 px-2.5 mb-2">Menú</div>
+      )}
+      <nav className="flex flex-col gap-0.5">
+        <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" collapsed={collapsed} />
+        <NavItem to="/" end icon={MessageSquare} label="Conversaciones" collapsed={collapsed} />
         {user?.es_super_admin && (
-          <NavLink to="/configuracion" className={linkClass} title={collapsed ? 'Settings' : undefined}>
-            {({ isActive }) => (
-              <>
-                {isActive && <SidebarHighlight />}
-                <Settings size={17} strokeWidth={2} className="shrink-0" />
-                {!collapsed && <span className="whitespace-nowrap">Settings</span>}
-              </>
-            )}
-          </NavLink>
+          <NavItem to="/configuracion" icon={SlidersHorizontal} label="Configuración" collapsed={collapsed} />
         )}
       </nav>
 
       <div className="mt-auto relative">
-        {menuOpen && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-            <div
-              className={`absolute bottom-full mb-2 surface p-1.5 z-50 ${
-                collapsed ? 'left-0 w-48' : 'left-0 right-0'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2 text-sm text-left px-2.5 py-2 rounded-lg text-gray-600 hover:bg-black/[0.04] hover:text-[var(--ink-1)] whitespace-nowrap"
+        <AnimatePresence>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <motion.div
+                initial={materialize.initial}
+                animate={materialize.animate}
+                exit={materialize.exit}
+                transition={springPress}
+                className="absolute bottom-[calc(100%+8px)] left-0 right-0 min-w-[200px] bg-surface border border-line-soft rounded-xl shadow-pop p-1.5 z-50"
               >
-                <LogOut size={15} />
-                Sign out
-              </button>
-            </div>
-          </>
-        )}
+                <div className="px-2.5 pt-2 pb-2.5 border-b border-line-soft mb-1">
+                  <div className="text-xs text-ink-3">Sesión iniciada como</div>
+                  <div className="text-[13px] font-medium text-ink truncate">{user?.email}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] text-left text-ink-2 hover:bg-surface-2 hover:text-ink"
+                >
+                  <LogOut size={15} />
+                  Cerrar sesión
+                </button>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
         <button
           type="button"
           onClick={() => setMenuOpen((o) => !o)}
           title={collapsed ? user?.nombre_usuario : undefined}
-          className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-black/[0.03] transition-colors ${
-            collapsed ? 'justify-center px-0' : ''
-          }`}
+          className="w-full flex items-center gap-2.5 p-2 rounded-xl border border-line-soft bg-bg hover:border-line hover:bg-surface-2 text-left overflow-hidden transition-colors"
         >
-          <div className="w-8 h-8 rounded-full bg-[var(--wa-green)]/15 text-[var(--wa-green)] flex items-center justify-center text-xs font-semibold shrink-0">
-            {initial}
+          <div className="relative shrink-0">
+            <div className="w-[34px] h-[34px] rounded-full bg-[linear-gradient(135deg,#2f8cf5,#1a3fa8)] text-white flex items-center justify-center text-xs font-semibold tracking-[.02em]">
+              {initials(user?.nombre_usuario)}
+            </div>
+            <span className="absolute -right-px -bottom-px w-2.5 h-2.5 rounded-full bg-[#10b981] border-2 border-bg" />
           </div>
           {!collapsed && (
             <>
-              <div className="min-w-0 flex-1 text-left leading-tight">
-                <div className="text-sm font-medium text-[var(--ink-1)] truncate">{user?.nombre_usuario}</div>
-                {user?.cliente_activo && (
-                  <div className="text-xs text-gray-400 truncate">{user.cliente_activo.nombre_cliente}</div>
-                )}
+              <div className="flex-1 min-w-0 leading-[1.25]">
+                <div className="text-[13px] font-medium text-ink truncate">{user?.nombre_usuario}</div>
+                <div className="text-[11px] font-light text-ink-3 tracking-[.06em] truncate">{subtitulo}</div>
               </div>
-              <ChevronDown size={14} className="text-gray-400 shrink-0" />
+              <ChevronsUpDown size={14} className="text-ink-3 shrink-0" />
             </>
           )}
         </button>

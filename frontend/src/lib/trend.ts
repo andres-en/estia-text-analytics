@@ -1,5 +1,6 @@
 export interface Trend {
   direction: 'up' | 'down' | 'flat' | 'new'
+  /** Etiqueta corta para la píldora de la tarjeta ("+75.6%", "Nuevo", "Sin cambio"). */
   label: string
 }
 
@@ -7,15 +8,15 @@ export interface Trend {
 // Ver business_indicators_trend en conversation_view.py para cómo se define cada período.
 export function computeTrend(current: number, previous: number): Trend | null {
   if (previous === 0) {
-    return current > 0 ? { direction: 'new', label: 'New' } : null
+    return current > 0 ? { direction: 'new', label: 'Nuevo' } : null
   }
   const pct = ((current - previous) / previous) * 100
   if (Math.abs(pct) < 0.5) {
-    return { direction: 'flat', label: 'No change' }
+    return { direction: 'flat', label: 'Sin cambio' }
   }
   const sign = pct > 0 ? '+' : ''
   return {
     direction: pct > 0 ? 'up' : 'down',
-    label: `${sign}${pct.toFixed(1)}% vs. previous period`,
+    label: `${sign}${pct.toFixed(1)}%`,
   }
 }

@@ -1,39 +1,153 @@
 @import "tailwindcss";
 
+/* Tokens del rediseño hi-fi (Claude Design). Todo color de la app sale de
+   estas variables — así el modo oscuro es solo redefinirlas en
+   [data-theme="dark"], sin tocar componentes. Todavía no hay selector de tema:
+   basta con poner data-theme="dark" en <html> para activarlo. */
 :root {
-  /* Cromo de la app: antes verde WhatsApp saturado, ahora una paleta neutra
-     tipo Apple (grafito + un acento salvia apagado). Las burbujas de chat de
-     abajo se dejan intactas a propósito — reproducen WhatsApp de verdad, no
-     son parte de la marca de esta app. */
-  --wa-green-dark: #1c1c1e;
-  --wa-green: #3c6e5e;
-  --wa-green-light: #6b9a89;
-  --wa-bubble-out: #dcf8c6;
-  --wa-bubble-in: #ffffff;
-  --wa-chat-bg: #e5ddd5;
-  --wa-page-bg: #f5f5f7;
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --border: #e2e8f0;
+  --border-soft: #eef2f6;
+  --ink: #0f172a;
+  --ink-2: #475569;
+  --ink-3: #94a3b8;
+  --accent: #1d6ff2;
+  --accent-hover: #155ed6;
+  --accent-soft: #eaf2ff;
+  --accent-ink: #0b3a8a;
+  --bubble-in: #f1f5f9;
+  --bubble-out: #e9f1ff;
+  --bubble-out-border: #d6e5ff;
+  --row-hover: #f8fafc;
+  --row-sel: #f3f8ff;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 20px -8px rgba(15, 23, 42, 0.1);
+  --shadow-lg: 0 12px 32px -8px rgba(15, 23, 42, 0.18);
+  --ok-bg: rgba(16, 185, 129, 0.12);
+  --ok-fg: #047857;
+  --bad-bg: rgba(244, 63, 94, 0.1);
+  --bad-fg: #be123c;
+  --warn-bg: rgba(245, 158, 11, 0.14);
+  --warn-fg: #b45309;
+  --mute-bg: rgba(100, 116, 139, 0.12);
+  --mute-fg: #475569;
+  --ai: #f59e0b;
+  --danger: #e11d48;
+  --danger-hover: #be123c;
+}
 
-  --ink-1: #1d1d1f;
-  --ink-2: #6e6e73;
-  --surface-border: rgba(0, 0, 0, 0.06);
+:root[data-theme='dark'] {
+  --bg: #0b1120;
+  --surface: #111827;
+  --surface-2: #1e293b;
+  --border: #263247;
+  --border-soft: #1c2638;
+  --ink: #e5e9f0;
+  --ink-2: #a3afc2;
+  --ink-3: #6b7a90;
+  --accent: #4b8cff;
+  --accent-hover: #6aa1ff;
+  --accent-soft: rgba(75, 140, 255, 0.14);
+  --accent-ink: #b9d0ff;
+  --bubble-in: #1e293b;
+  --bubble-out: #15264a;
+  --bubble-out-border: #1e3566;
+  --row-hover: #151f31;
+  --row-sel: #13223d;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -10px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --ok-bg: rgba(16, 185, 129, 0.16);
+  --ok-fg: #6ee7b7;
+  --bad-bg: rgba(244, 63, 94, 0.16);
+  --bad-fg: #fda4af;
+  --warn-bg: rgba(245, 158, 11, 0.16);
+  --warn-fg: #fcd34d;
+  --mute-bg: rgba(148, 163, 184, 0.14);
+  --mute-fg: #cbd5e1;
+  --ai: #fbbf24;
+  color-scheme: dark;
+}
+
+/* Las mismas variables, expuestas como utilidades de Tailwind (bg-surface,
+   text-ink-2, border-line-soft, shadow-card…). `inline` hace que la clase
+   apunte a la variable y no a su valor, así siguen el tema activo. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-line-soft: var(--border-soft);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-row-hover: var(--row-hover);
+  --color-row-sel: var(--row-sel);
+  --color-ok-bg: var(--ok-bg);
+  --color-ok-fg: var(--ok-fg);
+  --color-bad-bg: var(--bad-bg);
+  --color-bad-fg: var(--bad-fg);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-fg: var(--warn-fg);
+  --color-mute-bg: var(--mute-bg);
+  --color-mute-fg: var(--mute-fg);
+  --color-ai: var(--ai);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
 }
 
 body {
-  background: var(--wa-page-bg);
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif;
-  color: var(--ink-1);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Superficie base para tarjetas/paneles: esquinas más generosas, sombra en
-   capas suave en vez de un box-shadow duro, borde de un pelo en vez de gris
-   sólido — así las tarjetas se sienten como material físico, no como cajas. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-3);
+}
+
+/* Inputs de fecha nativos dentro de los campos "píldora": sin bordes propios y
+   con el ícono del calendario atenuado para que no compita con el ícono del campo. */
+input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0.45;
+  cursor: pointer;
+}
+
+@keyframes estia-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-estia-fade {
+  animation: estia-fade 220ms ease-out both;
+}
+
+/* Tarjeta base: blanca, esquinas de 16px y sombra suave sobre el fondo gris. */
 .surface {
-  background: #fff;
+  background: var(--surface);
   border-radius: 1rem;
-  border: 1px solid var(--surface-border);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.04),
-    0 8px 24px -12px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow);
 }
 
 .btn-primary {
@@ -41,17 +155,32 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  background: var(--ink-1);
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: var(--accent);
   color: #fff;
+  font-size: 13px;
   font-weight: 600;
-  border-radius: 999px;
-  transition: background-color 150ms ease-out, opacity 150ms ease-out;
+  white-space: nowrap;
+  box-shadow:
+    0 1px 2px rgba(29, 111, 242, 0.3),
+    0 6px 16px -6px rgba(29, 111, 242, 0.6);
+  transition:
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    opacity 150ms ease-out,
+    transform 100ms ease-out;
 }
 .btn-primary:hover:not(:disabled) {
-  background: #000;
+  background: var(--accent-hover);
+  box-shadow:
+    0 1px 2px rgba(29, 111, 242, 0.3),
+    0 8px 20px -6px rgba(29, 111, 242, 0.7);
 }
 .btn-primary:disabled {
   opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .btn-secondary {
@@ -59,23 +188,122 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  background: #fff;
-  color: var(--ink-1);
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
   font-weight: 600;
-  border-radius: 999px;
-  border: 1px solid var(--surface-border);
-  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition:
+    border-color 150ms ease-out,
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    transform 100ms ease-out;
 }
 .btn-secondary:hover:not(:disabled) {
-  border-color: rgba(0, 0, 0, 0.16);
-  background: #fafafa;
+  border-color: var(--ink-3);
+  background: var(--bg);
 }
 .btn-secondary:disabled {
   opacity: 0.45;
+  cursor: not-allowed;
 }
 
-/* Respuesta instantánea al presionar: feedback en pointer-down, no en el resultado final. */
-button:not(:disabled) {
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease-out,
+    opacity 150ms ease-out,
+    transform 100ms ease-out;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Botón fantasma cuadrado (íconos de acción en tablas y encabezados). */
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    transform 100ms ease-out;
+}
+.btn-icon:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* Campo "píldora": contenedor con ícono + input sin bordes adentro. */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  box-sizing: border-box;
+  transition: border-color 150ms ease-out;
+}
+.field:focus-within {
+  border-color: var(--accent);
+}
+.field input,
+.field select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+}
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+/* Etiqueta de sección en mayúsculas (encabezados de tabla, títulos chicos). */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Respuesta instantánea al presionar: feedback en pointer-down, no en el resultado final.
+   `:where` deja la especificidad en cero para no pisar las transiciones de color
+   que declaran .btn-primary y compañía. */
+:where(button:not(:disabled)) {
   transition: transform 100ms ease-out;
 }
 button:not(:disabled):active {
@@ -93,12 +321,5 @@ button:not(:disabled):active {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
-  }
-}
-
-@media (prefers-contrast: more) {
-  .glass-surface {
-    background: var(--wa-page-bg) !important;
-    backdrop-filter: none !important;
   }
 }

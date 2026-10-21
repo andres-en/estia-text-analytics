@@ -11,13 +11,11 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@tanstack/react-table": "^8.21.3",
     "lucide-react": "^1.33.0",
     "motion": "^13.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
-    "recharts": "^3.10.1",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {

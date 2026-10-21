@@ -21,6 +21,7 @@ function AppRoutes() {
         animate={fadeIn.animate}
         exit={fadeIn.exit}
         transition={springSettle}
+        className="h-full"
       >
         <Routes location={location}>
           <Route path="/" element={<ConversationsPage />} />
@@ -51,9 +52,12 @@ export default function App() {
               path="/*"
               element={
                 <RequireAuth>
-                  <div className="flex">
+                  {/* Cada página decide su propio scroll: Dashboard y Configuración
+                      desplazan todo el <main>; Conversaciones llena la ventana y
+                      desplaza solo la tabla y el panel. */}
+                  <div className="flex h-screen overflow-hidden bg-bg text-ink">
                     <Sidebar />
-                    <main className="flex-1 min-w-0 p-6 max-w-screen-2xl mx-auto">
+                    <main className="flex-1 min-w-0 overflow-y-auto">
                       <AppRoutes />
                     </main>
                   </div>
