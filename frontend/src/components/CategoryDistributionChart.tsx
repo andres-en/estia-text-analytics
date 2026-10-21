@@ -1,5 +1,5 @@
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useCategorias } from '../context/CategoriasContext'
+import { formatNumber, formatPercent } from '../lib/format'
 
 interface CatalogoItem {
   id: string
@@ -8,55 +8,58 @@ interface CatalogoItem {
   orden: number
 }
 
-// `catalogo` opcional: por defecto resuelve etiquetas/colores contra las
-// categorías del cliente; se pasa para graficar otro nivel (ej. subcategorías).
+// Barras horizontales en HTML (no SVG) para que las etiquetas largas se corten
+// con elipsis en vez de encimarse. `catalogo` opcional: por defecto resuelve
+// etiquetas/colores contra las categorías del cliente; se pasa para graficar
+// otro nivel (ej. subcategorías). `total` es el denominador del porcentaje —
+// puede incluir categorías que no se grafican.
 export default function CategoryDistributionChart({
   counts,
+  total,
   catalogo,
 }: {
   counts: Record<string, number>
+  total: number
   catalogo?: CatalogoItem[]
 }) {
   const { categorias, meta: metaCategoria } = useCategorias()
-  const total = Object.values(counts).reduce((a, b) => a + b, 0)
   const fuente = catalogo ?? categorias
   const meta = (id: string) => fuente.find((c) => c.id === id) ?? metaCategoria(id)
   const orden = new Map(fuente.map((c) => [c.id, c.orden]))
   const data = Object.entries(counts)
     .filter(([, n]) => n > 0)
     .sort(([a], [b]) => (orden.get(a) ?? 999) - (orden.get(b) ?? 999))
-    .map(([categoria, n]) => ({ name: meta(categoria).label, value: n, categoria }))
+  const max = Math.max(...data.map(([, n]) => n), 1)
 
   if (data.length === 0) {
-    return <p className="text-sm text-gray-400 py-8 text-center">No classification data yet.</p>
+    return <p className="text-[13px] text-ink-3 py-8 text-center">Todavía no hay conversaciones clasificadas.</p>
   }
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
-      <BarChart data={data} layout="vertical" margin={{ left: 8, right: 56 }}>
-        <CartesianGrid horizontal={false} stroke="#e1e0d9" />
-        <XAxis type="number" tick={{ fontSize: 12, fill: '#898781' }} allowDecimals={false} />
-        <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 12, fill: '#52514e' }} />
-        <Tooltip formatter={(v) => Number(v).toLocaleString('en-US')} />
-        <Bar
-          dataKey="value"
-          radius={[0, 4, 4, 0]}
-          barSize={22}
-          label={{
-            position: 'right',
-            fontSize: 12,
-            fill: '#52514e',
-            formatter: (v: unknown) => {
-              const n = Number(v) || 0
-              return `${n.toLocaleString('en-US')} (${((n / total) * 100).toFixed(1)}%)`
-            },
-          }}
-        >
-          {data.map((d) => (
-            <Cell key={d.categoria} fill={meta(d.categoria).color} />
-          ))}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
+    <div className="flex flex-col gap-3">
+      {data.map(([id, n]) => {
+        const { label, color } = meta(id)
+        return (
+          <div key={id} className="grid grid-cols-[150px_minmax(0,1fr)_96px] items-center gap-3">
+            <span className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2 min-w-0">
+              <span className="w-2 h-2 rounded-[3px] shrink-0" style={{ backgroundColor: color }} />
+              <span className="truncate" title={label}>
+                {label}
+              </span>
+            </span>
+            <div className="h-2.5 rounded-full bg-surface-2 overflow-hidden">
+              <div
+                className="h-full min-w-1 rounded-full transition-[width] duration-500 ease-[cubic-bezier(.2,.8,.2,1)]"
+                style={{ width: `${((n / max) * 100).toFixed(2)}%`, backgroundColor: color }}
+              />
+            </div>
+            <span className="text-[12.5px] text-right tabular-nums whitespace-nowrap">
+              <strong className="font-semibold text-ink">{formatNumber(n)}</strong>{' '}
+              <span className="text-ink-3">{total > 0 ? formatPercent(n / total) : ''}</span>
+            </span>
+          </div>
+        )
+      })}
+    </div>
   )
 }

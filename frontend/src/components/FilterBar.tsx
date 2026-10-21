@@ -1,5 +1,9 @@
-import { Calendar, FilterX, Search } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { ChevronDown, RotateCcw, Search, User } from 'lucide-react'
 import { useCategorias } from '../context/CategoriasContext'
+import DateRangeField from './DateRangeField'
+import Switch from './Switch'
+import { categoryInk, categorySoftBg } from '../lib/categoryColors'
 
 export interface FilterState {
   q: string
@@ -15,8 +19,24 @@ interface Props {
   onChange: (patch: Partial<FilterState>) => void
 }
 
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+
 export default function FilterBar({ value, onChange }: Props) {
   const { categorias, meta } = useCategorias()
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // ⌘K / Ctrl+K enfoca la búsqueda desde cualquier parte de la página.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const toggleCategoria = (cat: string) => {
     const has = value.categorias.includes(cat)
     onChange({
@@ -33,106 +53,82 @@ export default function FilterBar({ value, onChange }: Props) {
     value.contieneArray
 
   return (
-    <div className="surface p-4 mb-4 flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500">Search (phone or SESSION_ID)</label>
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              value={value.q}
-              onChange={(e) => onChange({ q: e.target.value })}
-              placeholder="573..."
-              className="border border-gray-200 rounded-lg pl-8 pr-2 py-1.5 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-black/5"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500">From</label>
-          <div className="relative">
-            <Calendar size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            <input
-              type="date"
-              value={value.desde}
-              onChange={(e) => onChange({ desde: e.target.value })}
-              className="border border-gray-200 rounded-lg pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/5"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500">To</label>
-          <div className="relative">
-            <Calendar size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            <input
-              type="date"
-              value={value.hasta}
-              onChange={(e) => onChange({ hasta: e.target.value })}
-              className="border border-gray-200 rounded-lg pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/5"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500">Category</label>
-          <div className="flex flex-wrap gap-2">
-            {categorias.map((cat) => {
-              const active = value.categorias.includes(cat.id)
-              const { color } = meta(cat.id)
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => toggleCategoria(cat.id)}
-                  className="text-xs rounded-full px-3 py-1.5 border transition-colors"
-                  style={
-                    active
-                      ? { backgroundColor: `${color}1a`, color, borderColor: 'transparent' }
-                      : { borderColor: '#e5e7eb', color: '#6b7280' }
-                  }
-                >
-                  {cat.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-gray-100">
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-gray-500">Started by</span>
+    <section className="surface p-3.5 flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2 items-center">
+        <label className="field flex-[2_1_260px]">
+          <Search size={16} className="text-ink-3 shrink-0" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={value.q}
+            onChange={(e) => onChange({ q: e.target.value })}
+            placeholder="Buscar por teléfono o SESSION_ID…"
+          />
+          <kbd className="font-mono text-[11px] text-ink-3 border border-line rounded-md px-1.5 py-px bg-surface">
+            {isMac ? '⌘K' : 'Ctrl K'}
+          </kbd>
+        </label>
+        <DateRangeField
+          desde={value.desde}
+          hasta={value.hasta}
+          onChange={(patch) => onChange(patch)}
+          className="flex-[1_0_auto]"
+        />
+        <label className="field relative flex-[0_1_190px] pr-2.5">
+          <User size={15} className="text-ink-3 shrink-0" />
+          <span className="text-xs text-ink-3 whitespace-nowrap">Iniciada por</span>
           <select
             value={value.iniciadaPor}
             onChange={(e) => onChange({ iniciadaPor: e.target.value as FilterState['iniciadaPor'] })}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/5"
+            className="font-medium pr-4"
           >
-            <option value="">All</option>
-            <option value="CUSTOMER">Client</option>
+            <option value="">Todas</option>
+            <option value="CUSTOMER">Cliente</option>
             <option value="BOT">Bot</option>
           </select>
+          <ChevronDown size={14} className="absolute right-2.5 text-ink-3 pointer-events-none" />
         </label>
-        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={value.contieneArray}
-            onChange={(e) => onChange({ contieneArray: e.target.checked })}
-            className="rounded border-gray-300"
-          />
-          Contiene "Array"
-        </label>
+        <Switch checked={value.contieneArray} onChange={(contieneArray) => onChange({ contieneArray })}>
+          Contiene “Array”
+        </Switch>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-line-soft">
+        <span className="text-xs font-medium text-ink-3 mr-1">Categoría</span>
+        {categorias.map((cat) => {
+          const active = value.categorias.includes(cat.id)
+          const { color } = meta(cat.id)
+          return (
+            <button
+              key={cat.id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => toggleCategoria(cat.id)}
+              className="flex items-center gap-1.5 h-[30px] px-3 rounded-full border text-xs font-medium hover:border-ink-3 transition-colors"
+              style={
+                active
+                  ? { backgroundColor: categorySoftBg(color), color: categoryInk(color), borderColor: 'transparent' }
+                  : { backgroundColor: 'var(--surface)', color: 'var(--ink-2)', borderColor: 'var(--border)' }
+              }
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+              {cat.label}
+            </button>
+          )
+        })}
         {hasFilters && (
           <button
             type="button"
             onClick={() =>
               onChange({ q: '', categorias: [], desde: '', hasta: '', iniciadaPor: '', contieneArray: false })
             }
-            className="btn-secondary text-xs px-3 py-1.5 ml-auto"
+            className="ml-auto flex items-center gap-1.5 h-[30px] px-2.5 rounded-lg text-xs font-medium text-ink-2 hover:bg-surface-2 hover:text-ink"
           >
-            <FilterX size={14} />
-            Clear filters
+            <RotateCcw size={13} />
+            Limpiar filtros
           </button>
         )}
       </div>
-    </div>
+    </section>
   )
 }

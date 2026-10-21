@@ -13,6 +13,9 @@ function pageList(current: number, total: number): (number | 'ellipsis')[] {
   return list
 }
 
+const arrowClass =
+  'w-[30px] h-[30px] rounded-lg border border-line bg-surface text-ink-2 flex items-center justify-center hover:border-ink-3 disabled:text-ink-3 disabled:opacity-60 disabled:hover:border-line'
+
 export default function Pagination({
   page,
   totalPages,
@@ -28,14 +31,14 @@ export default function Pagination({
         type="button"
         onClick={() => onChange(Math.max(page - 1, 1))}
         disabled={page <= 1}
-        aria-label="Previous page"
-        className="btn-secondary w-8 h-8 p-0 disabled:opacity-40"
+        aria-label="Página anterior"
+        className={arrowClass}
       >
-        <ChevronLeft size={15} />
+        <ChevronLeft size={14} />
       </button>
       {pageList(page, totalPages).map((p, i) =>
         p === 'ellipsis' ? (
-          <span key={`ellipsis-${i}`} className="w-8 h-8 flex items-center justify-center text-gray-400 text-sm">
+          <span key={`ellipsis-${i}`} className="px-1 text-ink-3">
             …
           </span>
         ) : (
@@ -44,8 +47,8 @@ export default function Pagination({
             type="button"
             onClick={() => onChange(p)}
             aria-current={p === page ? 'page' : undefined}
-            className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
-              p === page ? 'bg-[var(--ink-1)] text-white' : 'text-gray-500 hover:bg-black/[0.04]'
+            className={`min-w-[30px] h-[30px] px-1 rounded-lg text-xs transition-colors ${
+              p === page ? 'bg-accent-soft text-accent-ink font-semibold' : 'text-ink-2 hover:bg-surface-2'
             }`}
           >
             {p}
@@ -56,10 +59,10 @@ export default function Pagination({
         type="button"
         onClick={() => onChange(Math.min(page + 1, totalPages))}
         disabled={page >= totalPages}
-        aria-label="Next page"
-        className="btn-secondary w-8 h-8 p-0 disabled:opacity-40"
+        aria-label="Página siguiente"
+        className={arrowClass}
       >
-        <ChevronRight size={15} />
+        <ChevronRight size={14} />
       </button>
     </div>
   )

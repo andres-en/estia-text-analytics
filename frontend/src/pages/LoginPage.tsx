@@ -38,10 +38,10 @@ export default function LoginPage() {
   if (user) return <Navigate to="/" replace />
 
   return (
-    <div className="min-h-screen flex bg-[var(--wa-page-bg)]">
+    <div className="min-h-screen flex bg-bg">
       {/* Panel de marca — oculto en pantallas chicas, donde el logo compacto de
           la tarjeta de login (abajo) ya cubre la identidad de marca. */}
-      <div className="hidden lg:flex relative flex-1 items-center justify-center overflow-hidden border-r border-black/5 px-16">
+      <div className="hidden lg:flex relative flex-1 items-center justify-center overflow-hidden border-r border-line-soft px-16">
         <div aria-hidden className="absolute -top-28 -left-28 w-[28rem] h-[28rem] rounded-full bg-[#1baf7a]/15 blur-3xl" />
         <div aria-hidden className="absolute -bottom-40 -right-24 w-[30rem] h-[30rem] rounded-full bg-[#2a78d6]/15 blur-3xl" />
         <div aria-hidden className="absolute top-1/3 -right-20 w-72 h-72 rounded-full bg-[#22d3ee]/10 blur-3xl" />
@@ -54,15 +54,15 @@ export default function LoginPage() {
           className="relative max-w-lg text-center flex flex-col items-center"
         >
           <img src="/logo-estia.png" alt="ESTIA — Conversation Intelligence" className="w-96 mb-10" />
-          <p className="text-xl text-[var(--ink-2)] leading-relaxed mb-10">
+          <p className="text-xl text-ink-2 leading-relaxed mb-10">
             Classify and analyze WhatsApp conversations with AI — rules and language models working
             together to understand your customers.
           </p>
           <ul className="space-y-4 flex flex-col items-center">
             {FEATURES.map((f) => (
-              <li key={f} className="flex items-center gap-3 text-base text-[var(--ink-1)]">
-                <span className="w-5 h-5 rounded-full border-2 border-[var(--wa-green)] flex items-center justify-center shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--wa-green)]" />
+              <li key={f} className="flex items-center gap-3 text-base text-ink">
+                <span className="w-5 h-5 rounded-full border-2 border-accent flex items-center justify-center shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent" />
                 </span>
                 {f}
               </li>
@@ -80,25 +80,25 @@ export default function LoginPage() {
           className="w-full max-w-sm"
         >
           <img src="/logo-estia-icon.png" alt="ESTIA" className="w-12 h-12 mx-auto mb-6 lg:hidden" />
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--ink-1)] mb-1">Welcome</h1>
-          <p className="text-sm text-[var(--ink-2)] mb-6">Sign in with your Google account to continue.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink mb-1">Welcome</h1>
+          <p className="text-sm text-ink-2 mb-6">Sign in with your Google account to continue.</p>
 
           <div className="surface p-5">
-            <div className="flex items-start gap-2.5 bg-[var(--wa-green)]/5 border border-[var(--wa-green)]/15 rounded-lg p-3 text-xs text-[var(--ink-2)] mb-4">
-              <ShieldCheck size={15} className="text-[var(--wa-green)] shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2.5 bg-accent-soft border border-accent/15 rounded-lg p-3 text-xs text-ink-2 mb-4">
+              <ShieldCheck size={15} className="text-accent shrink-0 mt-0.5" />
               Access is limited to emails pre-approved by an administrator.
             </div>
 
             <a
               href={GOOGLE_LOGIN_URL}
-              className="w-full flex items-center justify-center gap-2.5 border border-gray-200 rounded-full py-2.5 text-sm font-medium text-[var(--ink-1)] bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors"
+              className="w-full flex items-center justify-center gap-2.5 border border-line rounded-full py-2.5 text-sm font-medium text-ink bg-surface hover:bg-bg hover:border-ink-3 transition-colors"
             >
               <GoogleIcon />
               Sign in with Google
             </a>
           </div>
 
-          <p className="text-xs text-gray-400 mt-6 text-center">Trouble signing in? Contact your administrator.</p>
+          <p className="text-xs text-ink-3 mt-6 text-center">Trouble signing in? Contact your administrator.</p>
         </motion.div>
       </div>
     </div>

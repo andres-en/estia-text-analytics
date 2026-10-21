@@ -1,23 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import AnimatedTabUnderline from '../../components/AnimatedTabUnderline'
-import PageHeader from '../../components/PageHeader'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   AlertTriangle,
   Bot,
   Building2,
   Check,
-  Coins,
+  ChevronDown,
   Database,
   Info,
   Megaphone,
   Pencil,
-  Settings,
-  ShieldCheck,
+  Plus,
+  Search,
   Sparkles,
   Trash2,
-  User,
-  UserCog,
   UserPlus,
   Users,
   X,
@@ -46,16 +41,23 @@ import {
   type Usuario,
 } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
-import StatCard from '../../components/StatCard'
+import PageHeader from '../../components/PageHeader'
+import SegmentedControl from '../../components/SegmentedControl'
+import DateRangeField from '../../components/DateRangeField'
+import Badge from '../../components/Badge'
+import ClientTile from '../../components/ClientTile'
+import Modal from '../../components/Modal'
+import { formatLongDate, formatMediumDate, formatNumber, initials, MESES_CORTOS, parseLocalDate } from '../../lib/format'
+import { rolLabel, rolTone } from '../../lib/roles'
 
 type Tab = 'clientes' | 'campanas' | 'usuarios' | 'uso-ia' | 'mantenimiento'
 
 const TAB_LABEL: Record<Tab, string> = {
-  clientes: 'Clients',
-  campanas: 'Campaigns',
-  usuarios: 'Users',
-  'uso-ia': 'AI usage',
-  mantenimiento: 'Maintenance',
+  clientes: 'Clientes',
+  campanas: 'Campañas',
+  usuarios: 'Usuarios',
+  'uso-ia': 'Uso de IA',
+  mantenimiento: 'Mantenimiento',
 }
 
 // Réplica en el navegador de `_slugify_db_name` (webapp/admin.py) — solo para
@@ -69,32 +71,8 @@ function previewDbName(nombreCliente: string): string {
   return slug ? `${slug}_clasificador_chat` : 'clasificador_chat'
 }
 
-// Paleta reutilizada del resto de la app (ver lib/categories.ts): verde marca,
-// azul y ámbar ya usados en badges/gráficas — así los roles se sienten parte
-// del mismo sistema visual en vez de traer colores nuevos.
-const ROL_STYLE: Record<string, { badge: string; accent: string; icon: typeof ShieldCheck }> = {
-  super_admin: { badge: 'bg-amber-100 text-amber-800', accent: '#eda100', icon: ShieldCheck },
-  admin: { badge: 'bg-blue-100 text-blue-800', accent: '#2a78d6', icon: UserCog },
-  user: { badge: 'bg-green-100 text-green-800', accent: '#1baf7a', icon: User },
-}
-
-const ROL_LABEL: Record<string, string> = {
-  super_admin: 'SuperAdmin',
-  admin: 'Admin',
-  user: 'User',
-}
-
-function rolStyle(nombreRol: string) {
-  return ROL_STYLE[nombreRol] ?? { badge: 'bg-gray-100 text-gray-700', accent: '#6b7280', icon: User }
-}
-
-function rolLabel(nombreRol: string) {
-  return ROL_LABEL[nombreRol] ?? nombreRol
-}
-
-function formatFecha(iso: string | null): string {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+function errorMsg(e: unknown, fallback: string): string {
+  return e instanceof Error ? e.message : fallback
 }
 
 export default function ConfiguracionPage() {
@@ -111,28 +89,142 @@ export default function ConfiguracionPage() {
   ]
 
   return (
-    <div>
-      <PageHeader icon={Settings} title="Settings" />
-      <div className="flex gap-1 mb-4 border-b border-gray-200">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`relative px-4 py-2 text-sm -mb-px ${
-              tab === t ? 'text-[var(--wa-green-dark)] font-semibold' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {TAB_LABEL[t]}
-            {tab === t && <AnimatedTabUnderline layoutId="configuracion-tab-underline" />}
-          </button>
-        ))}
+    <div className="flex flex-col gap-5 px-7 pt-6 pb-10 box-border max-w-[1400px]">
+      <PageHeader title="Configuración" subtitle="Administra clientes, campañas, usuarios y el consumo de IA." />
+      <SegmentedControl
+        size="lg"
+        options={tabs.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
+        value={tab}
+        onChange={setTab}
+        className="max-w-full"
+        style={{ width: tabs.length * 136 }}
+      />
+      <div key={tab} className="animate-estia-fade">
+        {tab === 'clientes' && <ClientesTab />}
+        {tab === 'campanas' && <CampanasTab />}
+        {tab === 'usuarios' && <UsuariosTab />}
+        {tab === 'uso-ia' && <UsoIATab />}
+        {tab === 'mantenimiento' && puedeEliminarConversaciones && <MantenimientoTab />}
       </div>
-      {tab === 'clientes' && <ClientesTab />}
-      {tab === 'campanas' && <CampanasTab />}
-      {tab === 'usuarios' && <UsuariosTab />}
-      {tab === 'uso-ia' && <UsoIATab />}
-      {tab === 'mantenimiento' && puedeEliminarConversaciones && <MantenimientoTab />}
     </div>
+  )
+}
+
+// --- Piezas compartidas ------------------------------------------------------
+
+function Card({ children, className }: { children: ReactNode; className?: string }) {
+  return <section className={`surface ${className ?? 'p-5 flex flex-col gap-4'}`}>{children}</section>
+}
+
+function CardTitle({ title, subtitle, children }: { title: ReactNode; subtitle?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div>
+        <h2 className="m-0 text-[15px] font-bold text-ink">{title}</h2>
+        {subtitle && <div className="text-[12.5px] text-ink-3 mt-[3px]">{subtitle}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function TableHeader({ title, count, children }: { title: string; count: number; children?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-line-soft flex-wrap">
+      <h2 className="m-0 text-[15px] font-bold text-ink">
+        {title} <span className="font-medium text-ink-3 ml-1">{count}</span>
+      </h2>
+      {children}
+    </div>
+  )
+}
+
+function Th({ children, align = 'left', first, last }: { children: ReactNode; align?: 'left' | 'right'; first?: boolean; last?: boolean }) {
+  return (
+    <th
+      className={`eyebrow pt-3 pb-2.5 ${align === 'right' ? 'text-right' : 'text-left'} ${
+        first ? 'pl-5 pr-3' : last ? 'pl-3 pr-5' : 'px-3'
+      }`}
+    >
+      {children}
+    </th>
+  )
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1.5 min-w-0">
+      <span className="text-xs font-medium text-ink-2">
+        {label} {hint && <span className="font-normal text-ink-3">· {hint}</span>}
+      </span>
+      {children}
+    </label>
+  )
+}
+
+const textareaClass =
+  'w-full box-border resize-y px-3 py-2.5 rounded-[10px] border border-line bg-bg text-[13px] leading-[1.6] text-ink outline-0 focus:border-accent transition-colors'
+
+function ClienteSelect({
+  clientes,
+  value,
+  onChange,
+  label,
+  variant = 'field',
+}: {
+  clientes: Cliente[]
+  value: number | ''
+  onChange: (id: number | '') => void
+  label?: string
+  variant?: 'field' | 'pill'
+}) {
+  return (
+    <span
+      className={`field relative pr-2.5 ${variant === 'pill' ? 'h-[38px] bg-surface' : ''}`}
+    >
+      <Building2 size={15} className="text-ink-3 shrink-0" />
+      {label && <span className="text-xs text-ink-3">{label}</span>}
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : '')}
+        className={`pr-5 ${variant === 'pill' ? 'font-semibold' : 'font-medium'}`}
+      >
+        <option value="" disabled>
+          Selecciona un cliente…
+        </option>
+        {clientes.map((c) => (
+          <option key={c.id_cliente} value={c.id_cliente}>
+            {c.nombre_cliente}
+          </option>
+        ))}
+      </select>
+      <ChevronDown size={14} className="absolute right-2.5 text-ink-3 pointer-events-none" />
+    </span>
+  )
+}
+
+/** Clientes del sistema + el seleccionado (el primero por defecto), para las pestañas que trabajan sobre uno. */
+function useClientesConSeleccion() {
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [clienteId, setClienteId] = useState<number | ''>('')
+  const [cargado, setCargado] = useState(false)
+  useEffect(() => {
+    fetchClientes()
+      .then((cs) => {
+        setClientes(cs)
+        if (cs.length > 0) setClienteId(cs[0]!.id_cliente)
+      })
+      .catch(() => setClientes([]))
+      .finally(() => setCargado(true))
+  }, [])
+  return { clientes, clienteId, setClienteId, cargado }
+}
+
+function SinClientes() {
+  return (
+    <Card className="p-5">
+      <p className="m-0 text-[13px] text-ink-3">Todavía no hay clientes — crea uno primero en la pestaña “Clientes”.</p>
+    </Card>
   )
 }
 
@@ -161,15 +253,19 @@ function ClientesTab() {
       setNombreNuevo('')
       cargar()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create the client')
+      setError(errorMsg(e, 'No se pudo crear el cliente'))
     } finally {
       setCreando(false)
     }
   }
 
   const handleToggleActivo = async (c: Cliente) => {
-    await updateCliente(c.id_cliente, { activo: !c.activo })
-    cargar()
+    try {
+      await updateCliente(c.id_cliente, { activo: !c.activo })
+      cargar()
+    } catch (e) {
+      setError(errorMsg(e, 'No se pudo actualizar el cliente'))
+    }
   }
 
   const empezarEdicion = (c: Cliente) => {
@@ -185,359 +281,571 @@ function ClientesTab() {
       setEditandoId(null)
       cargar()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not rename the client')
+      setError(errorMsg(e, 'No se pudo renombrar el cliente'))
     }
   }
 
+  const activos = clientes.filter((c) => c.activo).length
+
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <StatCard label="Registered clients" value={clientes.length} icon={Building2} accentColor="#075e54" />
-        <div className="bg-[var(--wa-green)]/5 border border-[var(--wa-green)]/20 rounded-lg p-4 flex items-start gap-3">
-          <Info size={18} className="text-[var(--wa-green-dark)] shrink-0 mt-0.5" />
-          <p className="text-sm text-[var(--wa-green-dark)]">
-            Each client gets its own database, provisioned automatically on creation.
-          </p>
-        </div>
-      </div>
-
-      <div className="surface overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-          <Building2 size={16} className="text-[var(--wa-green-dark)]" />
-          <h2 className="text-sm font-semibold text-[var(--wa-green-dark)]">New client</h2>
-        </div>
-        <div className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="block">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Client name</span>
-              <div className="mt-1 relative">
-                <Building2 size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={nombreNuevo}
-                  onChange={(e) => setNombreNuevo(e.target.value)}
-                  placeholder="e.g. Acme Retail"
-                  className="w-full text-sm border border-gray-300 rounded-lg pl-8 pr-3 py-2"
-                />
-              </div>
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Database (auto-generated)</span>
-              <div className="mt-1 relative">
-                <Database size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={nombreNuevo ? previewDbName(nombreNuevo) : ''}
-                  disabled
-                  placeholder="generated from the name"
-                  className="w-full text-sm border border-gray-200 bg-gray-50 text-gray-500 rounded-lg pl-8 pr-3 py-2"
-                />
-              </div>
-            </label>
-          </div>
-          <button
-            onClick={handleCrear}
-            disabled={creando || !nombreNuevo.trim()}
-            className="btn-primary mt-4 text-sm px-4 py-2"
-          >
-            {creando ? 'Creating...' : '+ Create client'}
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardTitle
+          title="Nuevo cliente"
+          subtitle="Cada cliente tiene su propia base de datos, que se crea automáticamente al registrarlo."
+        />
+        <div className="flex flex-wrap gap-3 items-end [&>label]:flex-[1_1_260px]">
+          <Field label="Nombre del cliente">
+            <span className="field">
+              <Building2 size={15} className="text-ink-3 shrink-0" />
+              <input
+                value={nombreNuevo}
+                onChange={(e) => setNombreNuevo(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCrear()}
+                placeholder="Ej: Bancolombia"
+              />
+            </span>
+          </Field>
+          <Field label="Base de datos" hint="auto-generada">
+            <span className="flex items-center gap-2 h-10 px-3 rounded-[10px] border border-dashed border-line bg-surface-2 min-w-0">
+              <Database size={15} className="text-ink-3 shrink-0" />
+              <span className={`font-mono text-xs truncate ${nombreNuevo.trim() ? 'text-ink' : 'text-ink-3'}`}>
+                {nombreNuevo.trim() ? previewDbName(nombreNuevo) : 'se genera a partir del nombre'}
+              </span>
+            </span>
+          </Field>
+          <button type="button" onClick={handleCrear} disabled={creando || !nombreNuevo.trim()} className="btn-primary h-10">
+            <Plus size={15} strokeWidth={2.2} />
+            {creando ? 'Creando…' : 'Crear cliente'}
           </button>
-          {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
         </div>
-      </div>
+        {error && <p className="m-0 text-[13px] text-bad-fg">{error}</p>}
+      </Card>
 
-      <div className="surface overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-          <Building2 size={16} className="text-gray-400" />
-          <h2 className="text-sm font-semibold text-gray-700">Registered clients ({clientes.length})</h2>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
-              <th className="px-4 py-2 font-medium">Name</th>
-              <th className="px-4 py-2 font-medium">Database</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 font-medium text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {clientes.map((c) => (
-              <tr key={c.id_cliente} className={!c.activo ? 'opacity-50' : ''}>
-                <td className="px-4 py-3">
-                  {editandoId === c.id_cliente ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        value={nombreEditado}
-                        onChange={(e) => setNombreEditado(e.target.value)}
-                        className="text-sm border border-gray-300 rounded-lg px-2 py-1"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => guardarNombre(c.id_cliente)}
-                        className="text-[var(--wa-green-dark)] hover:text-[var(--wa-green)]"
-                        title="Save"
-                      >
-                        <Check size={15} />
-                      </button>
-                      <button onClick={() => setEditandoId(null)} className="text-gray-400 hover:text-gray-600" title="Cancel">
-                        <X size={15} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-800">{c.nombre_cliente}</span>
-                      <button onClick={() => empezarEdicion(c)} title="Rename" className="text-gray-400 hover:text-[var(--wa-green-dark)]">
-                        <Pencil size={13} />
-                      </button>
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <code className="text-xs bg-gray-100 text-gray-600 rounded-lg px-1.5 py-0.5">{c.db_name}</code>
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`text-xs font-medium rounded-full px-2 py-0.5 ${
-                      c.activo ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'
-                    }`}
-                  >
-                    {c.activo ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button onClick={() => handleToggleActivo(c)} className="text-xs text-gray-400 hover:text-red-600">
-                    {c.activo ? 'Deactivate' : 'Activate'}
-                  </button>
-                </td>
+      <Card className="overflow-hidden">
+        <TableHeader title="Clientes registrados" count={clientes.length}>
+          <span className="text-xs text-ink-3">{activos} activos</span>
+        </TableHeader>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] border-collapse text-[13px]">
+            <thead>
+              <tr>
+                <Th first>Cliente</Th>
+                <Th>Base de datos</Th>
+                <Th>Estado</Th>
+                <Th align="right" last>
+                  Acciones
+                </Th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {clientes.length === 0 && <p className="p-4 text-sm text-gray-400">No clients yet.</p>}
-      </div>
+            </thead>
+            <tbody>
+              {clientes.map((c) => (
+                <tr key={c.id_cliente} className="border-t border-line-soft transition-colors hover:bg-bg">
+                  <td className="py-4 pl-5 pr-3">
+                    <div className="flex items-center gap-3">
+                      <ClientTile name={c.nombre_cliente} size="md" />
+                      {editandoId === c.id_cliente ? (
+                        <span className="field h-8 max-w-[260px]">
+                          <input
+                            value={nombreEditado}
+                            onChange={(e) => setNombreEditado(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') guardarNombre(c.id_cliente)
+                              if (e.key === 'Escape') setEditandoId(null)
+                            }}
+                            autoFocus
+                          />
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-ink">{c.nombre_cliente}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-4 px-3">
+                    <span className="inline-flex items-center px-2 py-[3px] rounded-md bg-surface-2 font-mono text-[11.5px] text-ink-2">
+                      {c.db_name}
+                    </span>
+                  </td>
+                  <td className="py-4 px-3">
+                    <Badge tone={c.activo ? 'ok' : 'mute'}>{c.activo ? 'Activo' : 'Inactivo'}</Badge>
+                  </td>
+                  <td className="py-4 pl-3 pr-5">
+                    <div className="flex justify-end gap-1">
+                      {editandoId === c.id_cliente ? (
+                        <>
+                          <button type="button" onClick={() => guardarNombre(c.id_cliente)} title="Guardar" className="btn-icon text-accent">
+                            <Check size={16} />
+                          </button>
+                          <button type="button" onClick={() => setEditandoId(null)} title="Cancelar" className="btn-icon">
+                            <X size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" onClick={() => empezarEdicion(c)} title="Renombrar" className="btn-icon">
+                            <Pencil size={15} />
+                          </button>
+                          <ToggleButton activo={c.activo} onClick={() => handleToggleActivo(c)} />
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {clientes.length === 0 && <p className="m-0 px-5 py-6 text-[13px] text-ink-3">Todavía no hay clientes.</p>}
+      </Card>
     </div>
+  )
+}
+
+function ToggleButton({ activo, onClick }: { activo: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="h-8 px-3 rounded-lg border border-line bg-surface text-xs font-medium text-ink-2 hover:border-ink-3 hover:text-ink transition-colors"
+    >
+      {activo ? 'Desactivar' : 'Activar'}
+    </button>
   )
 }
 
 // --- Campañas ------------------------------------------------------------------
 
 const TIPO_CONDICION_LABEL: Record<string, string> = {
-  regex_bot: 'Bot says',
-  regex_customer: 'Customer says',
-  boton: 'Exact button',
+  regex_bot: 'El bot dice',
+  regex_customer: 'El cliente dice',
+  boton: 'Botón exacto',
 }
 
-// Edita `configuracion.esquema_clasificacion` (categorías/indicadores/árbol de
-// decisión propios de la campaña — ver `analysis/schema.py`) sobre el mismo
-// string JSON que ya usa el textarea "avanzado": genera con IA a partir de un
-// prompt libre, deja editar categorías/indicadores a mano, y cualquier cambio
-// (de acá o del textarea) se refleja en el otro porque comparten la misma
+// `configuracion.esquema_clasificacion` (categorías/indicadores/árbol de
+// decisión propios de la campaña — ver `analysis/schema.py`) se edita sobre el
+// mismo string JSON que usa el textarea "avanzado": cualquier cambio (de los
+// campos o del textarea) se refleja en el otro porque comparten la misma
 // fuente de verdad (`configJson`).
-function EsquemaEditor({
-  clienteId,
-  configJson,
-  onChangeConfigJson,
-}: {
-  clienteId: number
-  configJson: string
-  onChangeConfigJson: (json: string) => void
-}) {
-  const [prompt, setPrompt] = useState('')
-  const [generando, setGenerando] = useState(false)
-  const [genError, setGenError] = useState<string | null>(null)
-
-  let config: Record<string, unknown> = {}
-  let jsonInvalido = false
+function leerConfig(configJson: string): { config: Record<string, unknown>; esquema: EsquemaClasificacion | null; invalido: boolean } {
   try {
-    config = configJson.trim() ? JSON.parse(configJson) : {}
+    const config = configJson.trim() ? (JSON.parse(configJson) as Record<string, unknown>) : {}
+    return { config, esquema: (config.esquema_clasificacion as EsquemaClasificacion | null | undefined) ?? null, invalido: false }
   } catch {
-    jsonInvalido = true
+    return { config: {}, esquema: null, invalido: true }
   }
-  const esquema = (config.esquema_clasificacion as EsquemaClasificacion | null | undefined) ?? null
+}
 
-  const setEsquema = (siguiente: EsquemaClasificacion) => {
-    onChangeConfigJson(JSON.stringify({ ...config, esquema_clasificacion: siguiente }, null, 2))
-  }
+function conEsquema(configJson: string, esquema: EsquemaClasificacion | null): string {
+  const { config } = leerConfig(configJson)
+  if (esquema) return JSON.stringify({ ...config, esquema_clasificacion: esquema }, null, 2)
+  const { esquema_clasificacion: _esquema, ...resto } = config
+  return Object.keys(resto).length ? JSON.stringify(resto, null, 2) : ''
+}
 
-  const quitarEsquema = () => {
-    const { esquema_clasificacion: _esquema, ...resto } = config
-    onChangeConfigJson(Object.keys(resto).length ? JSON.stringify(resto, null, 2) : '')
-  }
+function resumenEsquema(esquema: EsquemaClasificacion | null | undefined): string {
+  if (!esquema) return 'Categorías por defecto'
+  return `${esquema.categorias.length} categorías · ${esquema.indicadores.length} indicadores`
+}
 
-  const handleGenerar = async () => {
-    if (!prompt.trim()) return
-    setGenerando(true)
-    setGenError(null)
-    try {
-      const { esquema_clasificacion } = await generarEsquemaCampana(clienteId, prompt.trim())
-      setEsquema(esquema_clasificacion)
-      setPrompt('')
-    } catch (e) {
-      setGenError(e instanceof Error ? e.message : 'Could not generate the schema')
-    } finally {
-      setGenerando(false)
-    }
-  }
+function EsquemaFields({
+  esquema,
+  onChange,
+  onReset,
+}: {
+  esquema: EsquemaClasificacion
+  onChange: (e: EsquemaClasificacion) => void
+  onReset: () => void
+}) {
+  const actualizarCategoria = (idx: number, cambios: Partial<CategoriaDef>) =>
+    onChange({ ...esquema, categorias: esquema.categorias.map((c, i) => (i === idx ? { ...c, ...cambios } : c)) })
 
-  const actualizarCategoria = (idx: number, cambios: Partial<CategoriaDef>) => {
-    if (!esquema) return
-    setEsquema({ ...esquema, categorias: esquema.categorias.map((c, i) => (i === idx ? { ...c, ...cambios } : c)) })
-  }
+  const actualizarIndicador = (idx: number, cambios: Partial<IndicadorDef>) =>
+    onChange({ ...esquema, indicadores: esquema.indicadores.map((ind, i) => (i === idx ? { ...ind, ...cambios } : ind)) })
 
-  const actualizarIndicador = (idx: number, cambios: Partial<IndicadorDef>) => {
-    if (!esquema) return
-    setEsquema({ ...esquema, indicadores: esquema.indicadores.map((ind, i) => (i === idx ? { ...ind, ...cambios } : ind)) })
-  }
-
-  const actualizarPatron = (idxIndicador: number, idxCondicion: number, patron: string) => {
-    if (!esquema) return
-    const indicadores = esquema.indicadores.map((ind, i) => {
-      if (i !== idxIndicador) return ind
-      return { ...ind, condiciones: ind.condiciones.map((c, j) => (j === idxCondicion ? { ...c, patron } : c)) }
+  const actualizarPatron = (idxIndicador: number, idxCondicion: number, patron: string) =>
+    onChange({
+      ...esquema,
+      indicadores: esquema.indicadores.map((ind, i) =>
+        i !== idxIndicador ? ind : { ...ind, condiciones: ind.condiciones.map((c, j) => (j === idxCondicion ? { ...c, patron } : c)) },
+      ),
     })
-    setEsquema({ ...esquema, indicadores })
-  }
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2 items-start">
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder='Describe in your own words how you want to classify, e.g. "I sell online courses. I want to know who enrolled, who only asked about the price and who showed no interest."'
-          rows={2}
-          className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5"
-        />
-        <button
-          type="button"
-          onClick={handleGenerar}
-          disabled={generando || !prompt.trim()}
-          className="btn-primary text-xs px-3 py-2 shrink-0 inline-flex items-center gap-1.5 disabled:opacity-50"
-        >
-          <Sparkles size={13} />
-          {generando ? 'Generating...' : esquema ? 'Regenerate with AI' : 'Generate with AI'}
-        </button>
-      </div>
-      {genError && <p className="text-xs text-red-600">{genError}</p>}
-      {jsonInvalido && (
-        <p className="text-xs text-red-600">The advanced JSON below has a syntax error — fix it to edit here.</p>
-      )}
-
-      {esquema && (
-        <div className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50/70">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Categories</h4>
-            <button type="button" onClick={quitarEsquema} className="text-xs text-gray-400 hover:text-red-600">
-              Remove schema (use the default categories)
-            </button>
-          </div>
-          <div className="space-y-1.5">
-            {esquema.categorias.map((c, idx) => (
-              <div key={idx} className="flex items-center gap-2">
+    <div className="flex flex-col gap-[22px]">
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="eyebrow">Categorías</span>
+          <button type="button" onClick={onReset} className="text-xs text-ink-2 hover:text-bad-fg hover:underline">
+            Usar categorías por defecto
+          </button>
+        </div>
+        <div className="flex flex-col gap-2">
+          {esquema.categorias.map((c, idx) => (
+            <div
+              key={idx}
+              className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 py-1.5 pr-1.5 pl-2 rounded-xl border border-line-soft bg-bg focus-within:border-line"
+            >
+              <label
+                title="Cambiar color"
+                className="relative w-[26px] h-[26px] rounded-lg cursor-pointer shadow-[inset_0_0_0_1px_rgba(0,0,0,.08)]"
+                style={{ backgroundColor: c.color }}
+              >
                 <input
                   type="color"
                   value={c.color}
                   onChange={(e) => actualizarCategoria(idx, { color: e.target.value })}
-                  className="w-7 h-7 rounded border border-gray-300 shrink-0 cursor-pointer"
-                  title="Color"
+                  className="absolute inset-0 opacity-0 cursor-pointer"
                 />
-                <input
-                  value={c.label}
-                  onChange={(e) => actualizarCategoria(idx, { label: e.target.value })}
-                  className="flex-1 text-sm border border-gray-300 rounded-lg px-2 py-1"
-                />
-                <code className="text-[10px] text-gray-400 shrink-0">{c.id}</code>
-                {c.id === esquema.categoria_sin_respuesta && (
-                  <span className="text-[10px] text-gray-400 shrink-0">(no response)</span>
-                )}
-              </div>
-            ))}
-          </div>
+              </label>
+              <input
+                value={c.label}
+                onChange={(e) => actualizarCategoria(idx, { label: e.target.value })}
+                className="h-8 border-0 outline-0 bg-transparent text-[13px] font-medium text-ink min-w-0"
+              />
+              <span className="flex items-center gap-2 pr-1.5">
+                {c.id === esquema.categoria_sin_respuesta && <span className="text-[11px] text-ink-3">sin respuesta</span>}
+                <span className="font-mono text-[11px] text-ink-3 px-1.5 py-0.5 rounded-md bg-surface border border-line-soft">
+                  {c.id}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
 
-          <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide pt-1">Indicators</h4>
-          <div className="space-y-2">
-            {esquema.indicadores.map((ind, idx) => (
-              <div key={idx} className="border border-gray-200 rounded-lg p-2 bg-white space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`text-[10px] font-medium rounded-full px-2 py-0.5 shrink-0 ${
-                      ind.tipo === 'ia' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                    }`}
-                  >
-                    {ind.tipo === 'ia' ? 'AI criterion' : 'Rule'}
-                  </span>
-                  <input
-                    value={ind.label}
-                    onChange={(e) => actualizarIndicador(idx, { label: e.target.value })}
-                    className="flex-1 text-sm border border-gray-300 rounded-lg px-2 py-1"
-                  />
-                </div>
-                {ind.tipo === 'ia' ? (
+      <div className="flex flex-col gap-2.5">
+        <span className="eyebrow">Indicadores</span>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2.5">
+          {esquema.indicadores.map((ind, idx) => (
+            <div
+              key={idx}
+              className="flex flex-col gap-2.5 p-3.5 rounded-xl border border-line-soft bg-surface shadow-[0_1px_2px_rgba(15,23,42,.04)]"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-flex items-center h-[22px] px-2 rounded-full text-[11px] font-semibold shrink-0 ${
+                    ind.tipo === 'ia' ? 'bg-accent-soft text-accent-ink' : 'bg-ok-bg text-ok-fg'
+                  }`}
+                >
+                  {ind.tipo === 'ia' ? 'Criterio IA' : 'Regla'}
+                </span>
+                <input
+                  value={ind.label}
+                  onChange={(e) => actualizarIndicador(idx, { label: e.target.value })}
+                  className="flex-1 min-w-0 border-0 outline-0 bg-transparent text-[13.5px] font-semibold text-ink"
+                />
+              </div>
+              {ind.tipo === 'ia' ? (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] text-ink-3">Criterio</span>
                   <textarea
                     value={ind.descripcion_ia ?? ''}
                     onChange={(e) => actualizarIndicador(idx, { descripcion_ia: e.target.value })}
                     rows={2}
-                    placeholder="Criterion the AI must evaluate"
-                    className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1"
+                    placeholder="Criterio que debe evaluar la IA"
+                    className="px-2.5 py-[7px] rounded-lg bg-bg border border-line-soft text-xs leading-normal text-ink-2 outline-0 resize-y focus:border-accent"
                   />
-                ) : (
-                  <div className="space-y-1">
-                    {ind.condiciones.map((cond, j) => (
-                      <div key={j} className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-gray-400 w-24 shrink-0">
-                          {TIPO_CONDICION_LABEL[cond.tipo] ?? cond.tipo}
-                        </span>
-                        <input
-                          value={cond.patron}
-                          onChange={(e) => actualizarPatron(idx, j, e.target.value)}
-                          className="flex-1 text-xs font-mono border border-gray-300 rounded-lg px-2 py-1"
-                        />
-                      </div>
-                    ))}
+                </div>
+              ) : (
+                ind.condiciones.map((cond, j) => (
+                  <div key={j} className="flex flex-col gap-1">
+                    <span className="text-[11px] text-ink-3">{TIPO_CONDICION_LABEL[cond.tipo] ?? cond.tipo}</span>
+                    <input
+                      value={cond.patron}
+                      onChange={(e) => actualizarPatron(idx, j, e.target.value)}
+                      className="px-2.5 py-[7px] rounded-lg bg-bg border border-line-soft font-mono text-xs text-ink-2 outline-0 focus:border-accent"
+                    />
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide pt-1">Decision tree</h4>
-          <ol className="text-xs text-gray-500 space-y-0.5 list-decimal list-inside">
-            {esquema.arbol_decision.map((r, i) => (
-              <li key={i}>
-                {Object.keys(r.condicion).length === 0
-                  ? 'in any other case'
-                  : Object.entries(r.condicion)
-                      .map(([k, v]) => `${k}=${v ? 'yes' : 'no'}`)
-                      .join(' and ')}
-                {' → '}
-                <strong>{esquema.categorias.find((c) => c.id === r.categoria)?.label ?? r.categoria}</strong>
-              </li>
-            ))}
-          </ol>
-          <p className="text-[10px] text-gray-400">
-            To reorder rows or change the tree logic, edit the advanced JSON below.
-          </p>
+                ))
+              )}
+            </div>
+          ))}
         </div>
-      )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className="eyebrow">Árbol de decisión</span>
+        <ol className="m-0 pl-5 text-xs text-ink-2 space-y-1 list-decimal">
+          {esquema.arbol_decision.map((r, i) => (
+            <li key={i}>
+              {Object.keys(r.condicion).length === 0
+                ? 'en cualquier otro caso'
+                : Object.entries(r.condicion)
+                    .map(([k, v]) => `${k}=${v ? 'sí' : 'no'}`)
+                    .join(' y ')}
+              {' → '}
+              <strong className="font-semibold text-ink">
+                {esquema.categorias.find((c) => c.id === r.categoria)?.label ?? r.categoria}
+              </strong>
+            </li>
+          ))}
+        </ol>
+        <p className="m-0 text-[11px] text-ink-3">Para reordenar filas o cambiar la lógica del árbol, edita el JSON avanzado.</p>
+      </div>
     </div>
   )
 }
 
-function CampanasTab() {
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [clienteId, setClienteId] = useState<number | ''>('')
-  const [campanas, setCampanas] = useState<Campaign[]>([])
-  const [nombreNuevo, setNombreNuevo] = useState('')
-  const [configNueva, setConfigNueva] = useState('')
-  const [mostrarConfigNueva, setMostrarConfigNueva] = useState(false)
-  const [editandoId, setEditandoId] = useState<number | null>(null)
-  const [configEditada, setConfigEditada] = useState('')
+function useGenerarEsquema(clienteId: number | '') {
+  const [generando, setGenerando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const generar = async (prompt: string): Promise<EsquemaClasificacion | null> => {
+    if (!prompt.trim() || clienteId === '') return null
+    setGenerando(true)
+    setError(null)
+    try {
+      const { esquema_clasificacion } = await generarEsquemaCampana(clienteId, prompt.trim())
+      return esquema_clasificacion
+    } catch (e) {
+      setError(errorMsg(e, 'No se pudo generar el esquema'))
+      return null
+    } finally {
+      setGenerando(false)
+    }
+  }
+  return { generar, generando, error }
+}
 
-  useEffect(() => {
-    fetchClientes().then((cs) => {
-      setClientes(cs)
-      if (cs.length > 0) setClienteId(cs[0].id_cliente)
-    })
-  }, [])
+function NuevaCampana({ clienteId, onCreada }: { clienteId: number | ''; onCreada: () => void }) {
+  const [nombre, setNombre] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [configJson, setConfigJson] = useState('')
+  const [mostrarJson, setMostrarJson] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const { generar, generando, error: genError } = useGenerarEsquema(clienteId)
+  const { esquema, invalido } = leerConfig(configJson)
+
+  const handleGenerar = async () => {
+    const nuevo = await generar(prompt)
+    if (nuevo) setConfigJson((json) => conEsquema(json, nuevo))
+  }
+
+  const handleCrear = async () => {
+    if (!nombre.trim() || clienteId === '') return
+    setError(null)
+    try {
+      const configuracion = configJson.trim() ? JSON.parse(configJson) : undefined
+      await createClienteCampana(clienteId, nombre.trim(), configuracion)
+      setNombre('')
+      setPrompt('')
+      setConfigJson('')
+      setMostrarJson(false)
+      onCreada()
+    } catch (e) {
+      setError(e instanceof SyntaxError ? 'El JSON de configuración no es válido.' : errorMsg(e, 'No se pudo crear la campaña'))
+    }
+  }
+
+  return (
+    <Card className="p-5 flex flex-col gap-3.5">
+      <CardTitle
+        title="Nueva campaña"
+        subtitle="Describe en lenguaje natural cómo quieres clasificar y la IA generará un esquema borrador para revisar."
+      />
+      <Field label="Nombre">
+        <span className="field">
+          <Megaphone size={15} className="text-ink-3 shrink-0" />
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Rediferidos_TDC" />
+        </span>
+      </Field>
+      <Field label="Descripción del criterio">
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={3}
+          placeholder="Ej: “Vendo cursos online. Quiero saber quién se matriculó, quién solo preguntó el precio y quién no mostró interés.”"
+          className={textareaClass}
+        />
+      </Field>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={handleGenerar}
+          disabled={generando || !prompt.trim()}
+          className="flex items-center gap-2 h-[38px] px-3.5 rounded-[10px] border border-[var(--bubble-out-border)] bg-accent-soft text-accent-ink text-[13px] font-semibold hover:border-accent disabled:opacity-45 disabled:cursor-not-allowed transition-colors"
+        >
+          <Sparkles size={15} className="text-accent" />
+          {generando ? 'Generando…' : esquema ? 'Regenerar esquema con IA' : 'Generar esquema con IA'}
+        </button>
+        <button type="button" onClick={handleCrear} disabled={!nombre.trim()} className="btn-primary">
+          <Plus size={15} strokeWidth={2.2} />
+          Crear campaña
+        </button>
+        <button
+          type="button"
+          onClick={() => setMostrarJson((v) => !v)}
+          className="ml-auto text-xs font-medium text-ink-2 hover:text-ink hover:underline"
+        >
+          {mostrarJson ? 'Ocultar JSON avanzado' : 'Editar JSON avanzado'}
+        </button>
+      </div>
+      {(genError || error) && <p className="m-0 text-[13px] text-bad-fg">{genError ?? error}</p>}
+      {invalido && <p className="m-0 text-xs text-bad-fg">El JSON avanzado tiene un error de sintaxis — corrígelo para editar los campos.</p>}
+
+      {esquema && (
+        <div className="pt-4 border-t border-line-soft">
+          <EsquemaFields
+            esquema={esquema}
+            onChange={(e) => setConfigJson((json) => conEsquema(json, e))}
+            onReset={() => setConfigJson((json) => conEsquema(json, null))}
+          />
+        </div>
+      )}
+
+      {mostrarJson && (
+        <textarea
+          value={configJson}
+          onChange={(e) => setConfigJson(e.target.value)}
+          placeholder="JSON opcional — vacío = usar los valores por defecto (botones/regex del bot de venta de cupo)"
+          rows={8}
+          className={`${textareaClass} font-mono text-xs`}
+        />
+      )}
+    </Card>
+  )
+}
+
+function CampanaCard({ camp, clienteId, onGuardada }: { camp: Campaign; clienteId: number | ''; onGuardada: () => void }) {
+  const [editando, setEditando] = useState(false)
+  const [configJson, setConfigJson] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
+  const { generar, generando, error: genError } = useGenerarEsquema(clienteId)
+  const { esquema, invalido } = leerConfig(configJson)
+  const activa = /activ/i.test(camp.estado)
+
+  const empezar = () => {
+    setConfigJson(JSON.stringify(camp.configuracion ?? {}, null, 2))
+    setPrompt('')
+    setError(null)
+    setEditando(true)
+  }
+
+  const handleGenerar = async () => {
+    const nuevo = await generar(prompt)
+    if (nuevo) {
+      setConfigJson((json) => conEsquema(json, nuevo))
+      setPrompt('')
+    }
+  }
+
+  const guardar = async () => {
+    if (clienteId === '') return
+    setError(null)
+    setGuardando(true)
+    try {
+      await updateClienteCampana(clienteId, camp.id_campana, { configuracion: JSON.parse(configJson) })
+      setEditando(false)
+      onGuardada()
+    } catch (e) {
+      setError(e instanceof SyntaxError ? 'El JSON de configuración no es válido.' : errorMsg(e, 'No se pudo actualizar la campaña'))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <div className={`flex items-center gap-3 px-5 py-4 flex-wrap ${editando ? 'border-b border-line-soft' : ''}`}>
+        <span className="w-9 h-9 rounded-[10px] bg-accent-soft text-accent flex items-center justify-center shrink-0">
+          <Megaphone size={17} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="m-0 text-[15px] font-bold text-ink">{camp.nombre_campana}</h2>
+            <span
+              className={`inline-flex items-center h-5 px-2 rounded-full text-[11px] font-semibold tracking-[.04em] uppercase ${
+                activa ? 'bg-ok-bg text-ok-fg' : 'bg-mute-bg text-mute-fg'
+              }`}
+            >
+              {camp.estado}
+            </span>
+          </div>
+          <div className="text-xs text-ink-3 mt-0.5">{resumenEsquema(camp.configuracion?.esquema_clasificacion)}</div>
+        </div>
+        {editando ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setEditando(false)}
+              disabled={guardando}
+              className="h-[34px] px-3 rounded-lg text-[12.5px] font-medium text-ink-2 hover:bg-surface-2 hover:text-ink"
+            >
+              Cancelar
+            </button>
+            <button type="button" onClick={guardar} disabled={guardando || invalido} className="btn-primary h-[34px] px-3.5 text-[12.5px] shadow-none">
+              {guardando ? 'Guardando…' : 'Guardar cambios'}
+            </button>
+          </>
+        ) : (
+          <button type="button" onClick={empezar} className="btn-secondary h-[34px] px-3 text-[12.5px]">
+            <Pencil size={14} />
+            Editar configuración
+          </button>
+        )}
+      </div>
+
+      {editando && (
+        <div className="p-5 flex flex-col gap-[22px]">
+          <div className="flex gap-2.5 items-start flex-wrap">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={2}
+              placeholder={
+                esquema
+                  ? 'Describe cómo quieres clasificar para regenerar el esquema…'
+                  : 'Describe cómo quieres clasificar para generar un esquema propio…'
+              }
+              className={`${textareaClass} flex-[1_1_360px] w-auto`}
+            />
+            <button
+              type="button"
+              onClick={handleGenerar}
+              disabled={generando || !prompt.trim()}
+              className="btn-secondary hover:border-accent! hover:text-accent-ink"
+            >
+              <Sparkles size={15} className="text-accent" />
+              {generando ? 'Generando…' : esquema ? 'Regenerar con IA' : 'Generar con IA'}
+            </button>
+          </div>
+          {(genError || error) && <p className="m-0 -mt-3 text-[13px] text-bad-fg">{genError ?? error}</p>}
+          {invalido && <p className="m-0 -mt-3 text-xs text-bad-fg">El JSON avanzado tiene un error de sintaxis — corrígelo para editar los campos.</p>}
+
+          {esquema ? (
+            <EsquemaFields
+              esquema={esquema}
+              onChange={(e) => setConfigJson((json) => conEsquema(json, e))}
+              onReset={() => setConfigJson((json) => conEsquema(json, null))}
+            />
+          ) : (
+            !invalido && (
+              <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-bg border border-line-soft text-[12.5px] text-ink-2">
+                <Info size={15} className="shrink-0 mt-0.5 text-ink-3" />
+                Esta campaña usa las categorías por defecto. Genera un esquema con IA para definir las suyas.
+              </div>
+            )
+          )}
+
+          <details>
+            <summary className="text-xs font-medium text-ink-2 hover:text-ink cursor-pointer">JSON avanzado (edición manual completa)</summary>
+            <textarea
+              value={configJson}
+              onChange={(e) => setConfigJson(e.target.value)}
+              rows={12}
+              className={`${textareaClass} font-mono text-xs mt-2`}
+            />
+          </details>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function CampanasTab() {
+  const { clientes, clienteId, setClienteId, cargado } = useClientesConSeleccion()
+  const [campanas, setCampanas] = useState<Campaign[]>([])
 
   const cargarCampanas = (id: number) => fetchClienteCampanas(id).then(setCampanas).catch(() => setCampanas([]))
 
@@ -545,529 +853,32 @@ function CampanasTab() {
     if (clienteId !== '') cargarCampanas(clienteId)
   }, [clienteId])
 
-  const parseConfig = (texto: string): object | undefined => {
-    if (!texto.trim()) return undefined
-    return JSON.parse(texto)
-  }
-
-  const handleCrear = async () => {
-    if (!nombreNuevo.trim() || clienteId === '') return
-    setError(null)
-    try {
-      const configuracion = parseConfig(configNueva)
-      await createClienteCampana(clienteId, nombreNuevo.trim(), configuracion)
-      setNombreNuevo('')
-      setConfigNueva('')
-      setMostrarConfigNueva(false)
-      cargarCampanas(clienteId)
-    } catch (e) {
-      setError(
-        e instanceof SyntaxError ? 'The configuration JSON is not valid.' : e instanceof Error ? e.message : 'Could not create the campaign',
-      )
-    }
-  }
-
-  const empezarEdicion = (camp: Campaign) => {
-    setEditandoId(camp.id_campana)
-    setConfigEditada(JSON.stringify(camp.configuracion, null, 2))
-    setError(null)
-  }
-
-  const guardarEdicion = async (id_campana: number) => {
-    if (clienteId === '') return
-    setError(null)
-    try {
-      const configuracion = JSON.parse(configEditada)
-      await updateClienteCampana(clienteId, id_campana, { configuracion })
-      setEditandoId(null)
-      cargarCampanas(clienteId)
-    } catch (e) {
-      setError(
-        e instanceof SyntaxError ? 'The configuration JSON is not valid.' : e instanceof Error ? e.message : 'Could not update the campaign',
-      )
-    }
-  }
+  if (cargado && clientes.length === 0) return <SinClientes />
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <StatCard label="Campaigns for this client" value={campanas.length} icon={Megaphone} accentColor="#2a78d6" />
-        <div className="surface p-4 flex items-center gap-3">
-          <Building2 size={16} className="text-gray-400 shrink-0" />
-          <select
-            value={clienteId}
-            onChange={(e) => setClienteId(e.target.value ? Number(e.target.value) : '')}
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 flex-1"
-          >
-            <option value="" disabled>
-              Select a client...
-            </option>
-            {clientes.map((c) => (
-              <option key={c.id_cliente} value={c.id_cliente}>
-                {c.nombre_cliente}
-              </option>
-            ))}
-          </select>
-        </div>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <span className="text-[13px] text-ink-2">Campañas de</span>
+        <ClienteSelect clientes={clientes} value={clienteId} onChange={setClienteId} variant="pill" />
+        <span className="text-xs text-ink-3">
+          · {campanas.length} {campanas.length === 1 ? 'campaña registrada' : 'campañas registradas'}
+        </span>
       </div>
 
-      {clientes.length === 0 ? (
-        <p className="text-sm text-gray-400 surface p-4">
-          No clients yet — create one in the "Clients" tab first.
-        </p>
-      ) : (
-        <>
-          <div className="surface p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Megaphone size={16} className="text-[var(--wa-green-dark)]" />
-              <h2 className="text-sm font-semibold text-[var(--wa-green-dark)]">New campaign</h2>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                value={nombreNuevo}
-                onChange={(e) => setNombreNuevo(e.target.value)}
-                placeholder="e.g. Credit_Card_Refinancing"
-                className="text-sm border border-gray-300 rounded-lg px-3 py-2 flex-1 min-w-[200px]"
-              />
-              <button
-                onClick={handleCrear}
-                disabled={!nombreNuevo.trim()}
-                className="btn-primary text-sm px-4 py-2"
-              >
-                + Create campaign
-              </button>
-            </div>
+      <NuevaCampana clienteId={clienteId} onCreada={() => clienteId !== '' && cargarCampanas(clienteId)} />
 
-            <div className="mt-3">
-              <EsquemaEditor clienteId={clienteId || 0} configJson={configNueva} onChangeConfigJson={setConfigNueva} />
-            </div>
-
-            <button
-              onClick={() => setMostrarConfigNueva(!mostrarConfigNueva)}
-              className="text-xs text-gray-400 hover:text-gray-600 mt-2"
-            >
-              {mostrarConfigNueva ? 'Hide advanced JSON' : 'Advanced JSON (full manual editing)'}
-            </button>
-            {mostrarConfigNueva && (
-              <textarea
-                value={configNueva}
-                onChange={(e) => setConfigNueva(e.target.value)}
-                placeholder="Optional JSON — empty = use the defaults (buttons/regex of the credit-line sales bot)"
-                rows={6}
-                className="text-xs font-mono border border-gray-300 rounded-lg px-2 py-1.5 w-full mt-2"
-              />
-            )}
-            {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-          </div>
-
-          <div className="surface overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-              <Megaphone size={16} className="text-gray-400" />
-              <h2 className="text-sm font-semibold text-gray-700">Registered campaigns ({campanas.length})</h2>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {campanas.map((camp) => (
-                <div key={camp.id_campana} className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-medium text-gray-800 text-sm">{camp.nombre_campana}</span>
-                      <span className="text-xs text-gray-400 ml-2">({camp.estado})</span>
-                    </div>
-                    <button
-                      onClick={() => (editandoId === camp.id_campana ? setEditandoId(null) : empezarEdicion(camp))}
-                      className="text-xs text-[var(--wa-green-dark)] hover:underline"
-                    >
-                      {editandoId === camp.id_campana ? 'Cancel' : 'Edit configuration'}
-                    </button>
-                  </div>
-                  {editandoId === camp.id_campana && (
-                    <div className="mt-2 space-y-2">
-                      <EsquemaEditor clienteId={clienteId || 0} configJson={configEditada} onChangeConfigJson={setConfigEditada} />
-                      <details>
-                        <summary className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer">
-                          Advanced JSON (full manual editing)
-                        </summary>
-                        <textarea
-                          value={configEditada}
-                          onChange={(e) => setConfigEditada(e.target.value)}
-                          rows={10}
-                          className="text-xs font-mono border border-gray-300 rounded-lg px-2 py-1.5 w-full mt-2"
-                        />
-                      </details>
-                      <button
-                        onClick={() => guardarEdicion(camp.id_campana)}
-                        className="btn-primary text-xs px-3 py-1.5"
-                      >
-                        Save
-                      </button>
-                      {error && <p className="text-sm text-red-600">{error}</p>}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {campanas.length === 0 && <p className="p-4 text-sm text-gray-400">No campaigns yet.</p>}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-// --- Uso de IA -----------------------------------------------------------------
-
-const TIPO_USO_LABEL: Record<string, string> = {
-  clasificacion: 'Conversation classification',
-  generar_esquema: 'AI schema generation',
-}
-
-function UsoIATab() {
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [clienteId, setClienteId] = useState<number | ''>('')
-  const [desde, setDesde] = useState('')
-  const [hasta, setHasta] = useState('')
-  const [uso, setUso] = useState<UsoIA | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    fetchClientes().then((cs) => {
-      setClientes(cs)
-      if (cs.length > 0) setClienteId(cs[0].id_cliente)
-    })
-  }, [])
-
-  useEffect(() => {
-    if (clienteId === '') return
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    fetchUsoIA(clienteId, { desde: desde || undefined, hasta: hasta || undefined })
-      .then((res) => {
-        if (!cancelled) setUso(res)
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load AI usage')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [clienteId, desde, hasta])
-
-  // Un total por mes (sumando todos los modelos) — la tabla de abajo ya
-  // desglosa por modelo, esto es para ver la tendencia de gasto en el tiempo.
-  const gastoPorMes = useMemo(() => {
-    if (!uso) return []
-    const acumulado = new Map<string, { mes: string; costo: number; tokens: number; incompleto: boolean }>()
-    for (const f of uso.por_mes) {
-      const entrada = acumulado.get(f.mes) ?? { mes: f.mes, costo: 0, tokens: 0, incompleto: false }
-      entrada.tokens += f.tokens_prompt + f.tokens_completion
-      if (f.costo_usd != null) entrada.costo += f.costo_usd
-      else entrada.incompleto = true
-      acumulado.set(f.mes, entrada)
-    }
-    return Array.from(acumulado.values()).sort((a, b) => a.mes.localeCompare(b.mes))
-  }, [uso])
-  const algunMesIncompleto = gastoPorMes.some((m) => m.incompleto)
-
-  return (
-    <div className="space-y-4">
-      {clientes.length === 0 ? (
-        <p className="text-sm text-gray-400 surface p-4">
-          No clients yet — create one in the "Clients" tab first.
-        </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <StatCard label="Tokens used" value={uso?.tokens_totales ?? 0} icon={Bot} accentColor="#2a78d6" />
-            <div className="surface p-4 flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center bg-[#1baf7a]/10 text-[#1baf7a] shrink-0">
-                <Coins size={20} />
-              </div>
-              <div>
-                <div className="text-2xl font-semibold text-gray-800 tabular-nums">
-                  {uso?.costo_total_usd != null ? `$${uso.costo_total_usd.toFixed(2)}` : '—'}
-                </div>
-                <div className="text-xs text-gray-400">
-                  Estimated cost (USD){uso && uso.costo_total_usd == null && uso.filas.length > 0 ? ' — no known price for some model' : ''}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="surface p-4 flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-gray-500">Client</span>
-              <select
-                value={clienteId}
-                onChange={(e) => setClienteId(e.target.value ? Number(e.target.value) : '')}
-                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5"
-              >
-                {clientes.map((c) => (
-                  <option key={c.id_cliente} value={c.id_cliente}>
-                    {c.nombre_cliente}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-gray-500">From</span>
-              <input
-                type="date"
-                value={desde}
-                onChange={(e) => setDesde(e.target.value)}
-                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-gray-500">To</span>
-              <input
-                type="date"
-                value={hasta}
-                onChange={(e) => setHasta(e.target.value)}
-                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5"
-              />
-            </label>
-            {loading && <span className="text-xs text-gray-400">Loading...</span>}
-          </div>
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
-          <div className="surface p-4">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Spend per month</h2>
-            {gastoPorMes.length === 0 ? (
-              <p className="text-sm text-gray-400 py-8 text-center">No AI usage recorded in this range.</p>
-            ) : (
-              <>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={gastoPorMes}>
-                    <CartesianGrid vertical={false} stroke="#e1e0d9" />
-                    <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#898781' }} />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: '#898781' }}
-                      tickFormatter={(v: number) => `$${v.toFixed(2)}`}
-                    />
-                    <Tooltip
-                      formatter={(valor: unknown, _nombre: unknown, item: { payload?: { incompleto?: boolean } }) => [
-                        `$${Number(valor).toFixed(4)}${item.payload?.incompleto ? ' (parcial)' : ''}`,
-                        'Estimated cost',
-                      ]}
-                    />
-                    <Bar dataKey="costo" fill="#1baf7a" radius={[4, 4, 0, 0]} barSize={28} />
-                  </BarChart>
-                </ResponsiveContainer>
-                {algunMesIncompleto && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Months marked as "partial" include a model with no known price — their real cost is
-                    higher than shown.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-
-          <div className="surface overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-700">Breakdown by model</h2>
-            </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
-                  <th className="px-4 py-2 font-medium">Model</th>
-                  <th className="px-4 py-2 font-medium">Usage</th>
-                  <th className="px-4 py-2 font-medium text-right">Calls</th>
-                  <th className="px-4 py-2 font-medium text-right">Input tokens</th>
-                  <th className="px-4 py-2 font-medium text-right">Output tokens</th>
-                  <th className="px-4 py-2 font-medium text-right">Estimated cost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {(uso?.filas ?? []).map((f, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-3">
-                      <code className="text-xs bg-gray-100 text-gray-600 rounded-lg px-1.5 py-0.5">{f.modelo}</code>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{TIPO_USO_LABEL[f.tipo] ?? f.tipo}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{f.llamadas.toLocaleString('en-US')}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{f.tokens_prompt.toLocaleString('en-US')}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{f.tokens_completion.toLocaleString('en-US')}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">
-                      {f.costo_usd != null ? `$${f.costo_usd.toFixed(4)}` : 'no disponible'}
-                    </td>
-                  </tr>
-                ))}
-                {uso && uso.filas.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="text-center text-gray-400 py-8">
-                      No AI usage recorded for this client yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-xs text-gray-400">
-            Prices are for reference only (see <code className="font-mono">analysis/pricing.py</code> in the
-            backend) — check them against OpenAI's official pricing page if you need the exact figure.
-          </p>
-        </>
-      )}
-    </div>
-  )
-}
-
-// --- Mantenimiento (borrado de conversaciones por fecha) ---------------------
-
-function MantenimientoTab() {
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [clienteId, setClienteId] = useState<number | ''>('')
-  const [fecha, setFecha] = useState('')
-  const [pidiendoConfirmacion, setPidiendoConfirmacion] = useState(false)
-  const [eliminando, setEliminando] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [resultado, setResultado] = useState<{ fecha: string; conversaciones: number; mensajes: number } | null>(null)
-
-  useEffect(() => {
-    fetchClientes().then((cs) => {
-      setClientes(cs)
-      if (cs.length > 0) setClienteId(cs[0].id_cliente)
-    })
-  }, [])
-
-  const clienteSeleccionado = clientes.find((c) => c.id_cliente === clienteId)
-
-  const handleConfirmar = async () => {
-    if (clienteId === '' || !fecha) return
-    setEliminando(true)
-    setError(null)
-    try {
-      const res = await eliminarConversacionesPorFecha(clienteId, fecha)
-      setResultado({ fecha, conversaciones: res.conversaciones_eliminadas, mensajes: res.mensajes_eliminados })
-      setPidiendoConfirmacion(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not delete the conversations')
-    } finally {
-      setEliminando(false)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-        <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
-        <p className="text-sm text-red-800">
-          This permanently deletes the conversations, their messages and their analysis for the date and client you
-          pick — it cannot be undone. Meant for discarding an upload with bad data so the file can be uploaded
-          again. AI usage already recorded is kept.
-        </p>
-      </div>
-
-      {clientes.length === 0 ? (
-        <p className="text-sm text-gray-400 surface p-4">
-          No clients yet — create one in the "Clients" tab first.
-        </p>
-      ) : (
-        <div className="surface p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Trash2 size={16} className="text-red-600" />
-            <h2 className="text-sm font-semibold text-gray-800">Delete messages by date</h2>
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-gray-500">Client</span>
-              <select
-                value={clienteId}
-                onChange={(e) => {
-                  setClienteId(e.target.value ? Number(e.target.value) : '')
-                  setPidiendoConfirmacion(false)
-                  setResultado(null)
-                }}
-                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5"
-              >
-                {clientes.map((c) => (
-                  <option key={c.id_cliente} value={c.id_cliente}>
-                    {c.nombre_cliente}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-gray-500">Date</span>
-              <input
-                type="date"
-                value={fecha}
-                onChange={(e) => {
-                  setFecha(e.target.value)
-                  setPidiendoConfirmacion(false)
-                  setResultado(null)
-                }}
-                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5"
-              />
-            </label>
-            {!pidiendoConfirmacion && (
-              <button
-                onClick={() => {
-                  setResultado(null)
-                  setError(null)
-                  setPidiendoConfirmacion(true)
-                }}
-                disabled={clienteId === '' || !fecha}
-                className="text-sm px-4 py-2 rounded-full font-semibold text-red-700 border border-red-300 bg-red-50 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
-              >
-                <Trash2 size={14} />
-                Delete messages for this date
-              </button>
-            )}
-          </div>
-
-          {pidiendoConfirmacion && clienteSeleccionado && (
-            <div className="mt-3 border border-red-300 bg-red-50 rounded-lg p-3">
-              <p className="text-sm text-red-800">
-                Are you sure you want to delete every conversation and message of{' '}
-                <strong>{clienteSeleccionado.nombre_cliente}</strong> from{' '}
-                <strong>{new Date(`${fecha}T00:00:00`).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>?
-                This action cannot be undone.
-              </p>
-              <div className="flex items-center gap-2 mt-3">
-                <button
-                  onClick={handleConfirmar}
-                  disabled={eliminando}
-                  className="text-sm px-4 py-1.5 rounded-full font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                >
-                  {eliminando ? 'Deleting...' : 'Yes, delete'}
-                </button>
-                <button
-                  onClick={() => setPidiendoConfirmacion(false)}
-                  disabled={eliminando}
-                  className="text-sm px-4 py-1.5 rounded-full font-medium text-gray-600 border border-gray-300 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
-
-          {resultado && (
-            <div className="mt-3 border border-green-200 bg-green-50 rounded-lg p-3 flex items-start gap-2.5">
-              <Check size={16} className="text-green-700 shrink-0 mt-0.5" />
-              <p className="text-sm text-green-800">
-                Deleted <strong>{resultado.conversaciones}</strong> conversation(s) and{' '}
-                <strong>{resultado.mensajes}</strong> message(s) from{' '}
-                {new Date(`${resultado.fecha}T00:00:00`).toLocaleDateString('en-US', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                })}
-                . You can now upload the file for that date again.
-              </p>
-            </div>
-          )}
-        </div>
+      {campanas.map((camp) => (
+        <CampanaCard
+          key={camp.id_campana}
+          camp={camp}
+          clienteId={clienteId}
+          onGuardada={() => clienteId !== '' && cargarCampanas(clienteId)}
+        />
+      ))}
+      {campanas.length === 0 && (
+        <Card className="p-5">
+          <p className="m-0 text-[13px] text-ink-3">Este cliente todavía no tiene campañas.</p>
+        </Card>
       )}
     </div>
   )
@@ -1075,13 +886,14 @@ function MantenimientoTab() {
 
 // --- Usuarios ------------------------------------------------------------------
 
-interface EditForm {
-  nombre_usuario: string
-  id_rol: string
-  id_clientes: number[]
-}
+// Roles del resumen de Usuarios, con el color de su ícono (mismo tono que su badge).
+const ROLES_RESUMEN: { rol: string; cls: string }[] = [
+  { rol: 'super_admin', cls: 'bg-warn-bg text-warn-fg' },
+  { rol: 'admin', cls: 'bg-accent-soft text-accent-ink' },
+  { rol: 'user', cls: 'bg-ok-bg text-ok-fg' },
+]
 
-function ClienteCheckboxList({
+function ClienteChips({
   clientes,
   selected,
   onChange,
@@ -1090,24 +902,60 @@ function ClienteCheckboxList({
   selected: number[]
   onChange: (ids: number[]) => void
 }) {
-  const toggle = (id: number) => {
-    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
-  }
+  if (clientes.length === 0) return <span className="text-xs text-ink-3">No hay clientes creados</span>
   return (
-    <div className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm max-h-28 overflow-y-auto min-w-[170px] bg-white">
-      {clientes.length === 0 && <span className="text-gray-400 text-xs">No clients created</span>}
-      {clientes.map((c) => (
-        <label key={c.id_cliente} className="flex items-center gap-1.5 py-0.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={selected.includes(c.id_cliente)}
-            onChange={() => toggle(c.id_cliente)}
-          />
-          <span className="truncate">{c.nombre_cliente}</span>
-        </label>
-      ))}
-    </div>
+    <>
+      {clientes.map((c) => {
+        const on = selected.includes(c.id_cliente)
+        return (
+          <button
+            key={c.id_cliente}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(on ? selected.filter((x) => x !== c.id_cliente) : [...selected, c.id_cliente])}
+            className={`flex items-center gap-1.5 h-[30px] px-3 rounded-full border text-xs font-medium transition-colors hover:border-ink-3 ${
+              on ? 'bg-accent-soft text-accent-ink border-transparent' : 'bg-surface text-ink-2 border-line'
+            }`}
+          >
+            <span
+              className={`w-3.5 h-3.5 rounded border-[1.5px] flex items-center justify-center text-white ${
+                on ? 'bg-accent border-accent' : 'border-ink-3'
+              }`}
+            >
+              {on && <Check size={10} strokeWidth={3.5} />}
+            </span>
+            {c.nombre_cliente}
+          </button>
+        )
+      })}
+    </>
   )
+}
+
+function RolSelect({ roles, value, onChange, placeholder }: { roles: Rol[]; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <span className="field relative pr-2.5">
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="pr-5">
+        {placeholder && (
+          <option value="" disabled>
+            {placeholder}
+          </option>
+        )}
+        {roles.map((r) => (
+          <option key={r.id_rol} value={r.id_rol}>
+            {rolLabel(r.nombre_rol)}
+          </option>
+        ))}
+      </select>
+      <ChevronDown size={14} className="absolute right-2.5 text-ink-3 pointer-events-none" />
+    </span>
+  )
+}
+
+interface EditForm {
+  nombre_usuario: string
+  id_rol: string
+  id_clientes: number[]
 }
 
 function UsuariosTab() {
@@ -1126,6 +974,8 @@ function UsuariosTab() {
   const [editandoId, setEditandoId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<EditForm>({ nombre_usuario: '', id_rol: '', id_clientes: [] })
   const [guardando, setGuardando] = useState(false)
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroRol, setFiltroRol] = useState<string | null>(null)
 
   const cargar = () => fetchUsuarios().then(setUsuarios).catch(() => setUsuarios([]))
 
@@ -1135,8 +985,10 @@ function UsuariosTab() {
     fetchRoles().then(setRoles).catch(() => setRoles([]))
   }, [])
 
+  const formOk = Boolean(form.nombre_usuario.trim() && form.email.trim() && form.id_rol)
+
   const handleCrear = async () => {
-    if (!form.nombre_usuario.trim() || !form.email.trim() || !form.id_rol) return
+    if (!formOk) return
     setCreando(true)
     setError(null)
     try {
@@ -1149,15 +1001,19 @@ function UsuariosTab() {
       setForm({ nombre_usuario: '', email: '', id_rol: '', id_clientes: [] })
       cargar()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create the user')
+      setError(errorMsg(e, 'No se pudo crear el usuario'))
     } finally {
       setCreando(false)
     }
   }
 
   const handleToggleActivo = async (u: Usuario) => {
-    await updateUsuario(u.id_usuario, { activo: !u.activo })
-    cargar()
+    try {
+      await updateUsuario(u.id_usuario, { activo: !u.activo })
+      cargar()
+    } catch (e) {
+      setError(errorMsg(e, 'No se pudo actualizar el usuario'))
+    }
   }
 
   const empezarEdicion = (u: Usuario) => {
@@ -1180,200 +1036,594 @@ function UsuariosTab() {
       setEditandoId(null)
       cargar()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not update the user')
+      setError(errorMsg(e, 'No se pudo actualizar el usuario'))
     } finally {
       setGuardando(false)
     }
   }
 
-  const total = usuarios.length
+  const q = busqueda.trim().toLowerCase()
+  const visibles = usuarios.filter(
+    (u) =>
+      (!q || `${u.nombre_usuario} ${u.email}`.toLowerCase().includes(q)) && (!filtroRol || u.rol.nombre_rol === filtroRol),
+  )
   const porRol = (nombreRol: string) => usuarios.filter((u) => u.rol.nombre_rol === nombreRol).length
+  const resumen = [
+    { key: null, label: 'Total', n: usuarios.length, cls: 'bg-surface-2 text-ink-2' },
+    ...ROLES_RESUMEN.map(({ rol, cls }) => ({ key: rol as string | null, label: rolLabel(rol), n: porRol(rol), cls })),
+  ]
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total" value={total} icon={Users} accentColor="#075e54" />
-        <StatCard label="SuperAdmin" value={porRol('super_admin')} icon={ShieldCheck} accentColor={ROL_STYLE.super_admin.accent} />
-        <StatCard label="Admin" value={porRol('admin')} icon={UserCog} accentColor={ROL_STYLE.admin.accent} />
-        <StatCard label="User" value={porRol('user')} icon={User} accentColor={ROL_STYLE.user.accent} />
-      </div>
-
-      <div className="surface p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <UserPlus size={16} className="text-[var(--wa-green-dark)]" />
-          <h2 className="text-sm font-semibold text-[var(--wa-green-dark)]">Add user</h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={form.nombre_usuario}
-            onChange={(e) => setForm({ ...form, nombre_usuario: e.target.value })}
-            placeholder="Name"
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5"
-          />
-          <input
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            placeholder="correo@example.com"
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5"
-          />
-          <select
-            value={form.id_rol}
-            onChange={(e) => setForm({ ...form, id_rol: e.target.value })}
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5"
-          >
-            <option value="">Role...</option>
-            {roles.map((r) => (
-              <option key={r.id_rol} value={r.id_rol}>
-                {rolLabel(r.nombre_rol)}
-              </option>
-            ))}
-          </select>
-          <ClienteCheckboxList
-            clientes={clientes}
-            selected={form.id_clientes}
-            onChange={(ids) => setForm({ ...form, id_clientes: ids })}
-          />
+    <div className="flex flex-col gap-4">
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-px bg-line-soft border border-line-soft rounded-2xl shadow-card overflow-hidden">
+        {resumen.map((r) => (
           <button
-            onClick={handleCrear}
-            disabled={creando}
-            className="btn-primary text-sm px-4 py-1.5"
+            key={r.label}
+            type="button"
+            aria-pressed={filtroRol === r.key}
+            onClick={() => setFiltroRol(r.key)}
+            className={`flex items-center gap-3 px-[18px] py-4 text-left transition-colors hover:bg-bg ${
+              filtroRol === r.key ? 'bg-bg' : 'bg-surface'
+            }`}
           >
-            {creando ? 'Creating...' : 'Add'}
+            <span className={`w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 ${r.cls}`}>
+              <Users size={17} />
+            </span>
+            <span className="flex flex-col">
+              <span className="text-[22px] font-bold tracking-[-.02em] text-ink leading-[1.1] tabular-nums">{r.n}</span>
+              <span className="text-xs text-ink-2">{r.label}</span>
+            </span>
+          </button>
+        ))}
+      </section>
+
+      <Card className="p-5 flex flex-col gap-3.5">
+        <CardTitle
+          title="Agregar usuario"
+          subtitle="Sin ningún cliente marcado, el usuario es super admin y ve todos los clientes."
+        />
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
+          <Field label="Nombre">
+            <span className="field">
+              <input
+                value={form.nombre_usuario}
+                onChange={(e) => setForm({ ...form, nombre_usuario: e.target.value })}
+                placeholder="Nombre completo"
+              />
+            </span>
+          </Field>
+          <Field label="Correo">
+            <span className="field">
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="correo@empresa.com"
+              />
+            </span>
+          </Field>
+          <Field label="Rol">
+            <RolSelect roles={roles} value={form.id_rol} onChange={(id_rol) => setForm({ ...form, id_rol })} placeholder="Selecciona un rol" />
+          </Field>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-medium text-ink-2 mr-1">Clientes</span>
+          <ClienteChips clientes={clientes} selected={form.id_clientes} onChange={(ids) => setForm({ ...form, id_clientes: ids })} />
+          <button type="button" onClick={handleCrear} disabled={creando || !formOk} className="btn-primary ml-auto">
+            <UserPlus size={15} />
+            {creando ? 'Agregando…' : 'Agregar usuario'}
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">No client selected = super admin (sees all).</p>
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-      </div>
+        {error && <p className="m-0 text-[13px] text-bad-fg">{error}</p>}
+      </Card>
 
-      <div className="surface overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-          <ShieldCheck size={16} className="text-gray-400" />
-          <h2 className="text-sm font-semibold text-gray-700">Usuarios registrados ({total})</h2>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
-              <th className="px-4 py-2 font-medium">User</th>
-              <th className="px-4 py-2 font-medium">Role</th>
-              <th className="px-4 py-2 font-medium">Client</th>
-              <th className="px-4 py-2 font-medium">Registered on</th>
-              <th className="px-4 py-2 font-medium text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {usuarios.map((u) => {
-              const esUno = u.id_usuario === currentUser?.id_usuario
-              const style = rolStyle(u.rol.nombre_rol)
-              const editando = editandoId === u.id_usuario
-
-              return (
-                <tr key={u.id_usuario} className={!u.activo ? 'opacity-50' : ''}>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0"
-                        style={{ backgroundColor: `${style.accent}1a`, color: style.accent }}
-                      >
-                        {u.nombre_usuario.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        {editando ? (
-                          <input
-                            value={editForm.nombre_usuario}
-                            onChange={(e) => setEditForm({ ...editForm, nombre_usuario: e.target.value })}
-                            className="text-sm border border-gray-300 rounded-lg px-2 py-1 w-full"
-                          />
-                        ) : (
-                          <div className="font-medium text-gray-800 truncate">{u.nombre_usuario}</div>
-                        )}
-                        <div className="text-xs text-gray-400 truncate">
-                          {u.email} {esUno && <span className="text-[var(--wa-green-dark)] font-medium">· You</span>}
+      <Card className="overflow-hidden">
+        <TableHeader title="Usuarios registrados" count={visibles.length}>
+          <label className="field h-[34px] w-60 max-w-full px-2.5 rounded-lg">
+            <Search size={14} className="text-ink-3 shrink-0" />
+            <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar usuario…" className="text-[12.5px]!" />
+          </label>
+        </TableHeader>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] border-collapse text-[13px]">
+            <thead>
+              <tr>
+                <Th first>Usuario</Th>
+                <Th>Rol</Th>
+                <Th>Clientes</Th>
+                <Th>Registro</Th>
+                <Th align="right" last>
+                  Acciones
+                </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibles.map((u) => {
+                const esUno = u.id_usuario === currentUser?.id_usuario
+                const editando = editandoId === u.id_usuario
+                return (
+                  <tr
+                    key={u.id_usuario}
+                    className={`border-t border-line-soft align-middle transition-colors hover:bg-bg ${!u.activo ? 'opacity-50' : ''}`}
+                  >
+                    <td className="py-3.5 pl-5 pr-3">
+                      <div className="flex items-center gap-3">
+                        <span className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-[12.5px] font-semibold bg-surface-2 text-ink-2">
+                          {initials(u.nombre_usuario)}
+                        </span>
+                        <div className="min-w-0 leading-[1.35]">
+                          {editando ? (
+                            <span className="field h-8">
+                              <input
+                                value={editForm.nombre_usuario}
+                                onChange={(e) => setEditForm({ ...editForm, nombre_usuario: e.target.value })}
+                              />
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1.5 font-semibold text-ink">
+                              {u.nombre_usuario}
+                              {esUno && (
+                                <span className="text-[10.5px] font-semibold px-[7px] py-px rounded-full bg-accent-soft text-accent-ink">Tú</span>
+                              )}
+                            </div>
+                          )}
+                          <div className="text-xs text-ink-3">{u.email}</div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {editando ? (
-                      <select
-                        value={editForm.id_rol}
-                        onChange={(e) => setEditForm({ ...editForm, id_rol: e.target.value })}
-                        className="text-sm border border-gray-300 rounded-lg px-2 py-1"
-                      >
-                        {roles.map((r) => (
-                          <option key={r.id_rol} value={r.id_rol}>
-                            {rolLabel(r.nombre_rol)}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${style.badge}`}>
-                        {rolLabel(u.rol.nombre_rol)}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {editando ? (
-                      <ClienteCheckboxList
-                        clientes={clientes}
-                        selected={editForm.id_clientes}
-                        onChange={(ids) => setEditForm({ ...editForm, id_clientes: ids })}
-                      />
-                    ) : u.clientes.length > 0 ? (
-                      u.clientes.map((c) => c.nombre_cliente).join(', ')
-                    ) : (
-                      <span className="text-gray-400">no client</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">{formatFecha(u.fecha_creacion)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-3">
-                      {esUno ? (
-                        <span className="text-gray-300">—</span>
-                      ) : editando ? (
-                        <>
-                          <button
-                            onClick={() => guardarEdicion(u.id_usuario)}
-                            disabled={guardando}
-                            title="Save"
-                            className="text-[var(--wa-green-dark)] hover:text-[var(--wa-green)] disabled:opacity-50"
-                          >
-                            <Check size={16} />
-                          </button>
-                          <button
-                            onClick={() => setEditandoId(null)}
-                            title="Cancel"
-                            className="text-gray-400 hover:text-gray-600"
-                          >
-                            <X size={16} />
-                          </button>
-                        </>
+                    </td>
+                    <td className="py-3.5 px-3">
+                      {editando ? (
+                        <RolSelect roles={roles} value={editForm.id_rol} onChange={(id_rol) => setEditForm({ ...editForm, id_rol })} />
                       ) : (
-                        <>
-                          <button
-                            onClick={() => empezarEdicion(u)}
-                            title="Edit"
-                            className="text-gray-400 hover:text-[var(--wa-green-dark)]"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleToggleActivo(u)}
-                            title={u.activo ? 'Deactivate' : 'Activate'}
-                            className="text-xs text-gray-400 hover:text-red-600"
-                          >
-                            {u.activo ? 'Deactivate' : 'Activate'}
-                          </button>
-                        </>
+                        <Badge tone={rolTone(u.rol.nombre_rol)}>{rolLabel(u.rol.nombre_rol)}</Badge>
                       )}
-                    </div>
+                    </td>
+                    <td className="py-3.5 px-3">
+                      <div className="flex flex-wrap gap-1">
+                        {editando ? (
+                          <ClienteChips
+                            clientes={clientes}
+                            selected={editForm.id_clientes}
+                            onChange={(ids) => setEditForm({ ...editForm, id_clientes: ids })}
+                          />
+                        ) : u.clientes.length > 0 ? (
+                          u.clientes.map((c) => (
+                            <span key={c.id_cliente} className="px-2 py-0.5 rounded-md bg-surface-2 text-[11.5px] font-medium text-ink-2">
+                              {c.nombre_cliente}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-ink-3">Todos los clientes</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-3 text-ink-2 whitespace-nowrap">{formatMediumDate(u.fecha_creacion)}</td>
+                    <td className="py-3.5 pl-3 pr-5">
+                      <div className="flex justify-end gap-1">
+                        {esUno ? (
+                          <span className="text-ink-3">—</span>
+                        ) : editando ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => guardarEdicion(u.id_usuario)}
+                              disabled={guardando}
+                              title="Guardar"
+                              className="btn-icon text-accent disabled:opacity-50"
+                            >
+                              <Check size={16} />
+                            </button>
+                            <button type="button" onClick={() => setEditandoId(null)} title="Cancelar" className="btn-icon">
+                              <X size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" onClick={() => empezarEdicion(u)} title="Editar" className="btn-icon">
+                              <Pencil size={15} />
+                            </button>
+                            <ToggleButton activo={u.activo} onClick={() => handleToggleActivo(u)} />
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        {visibles.length === 0 && (
+          <p className="m-0 px-5 py-6 text-[13px] text-ink-3">
+            {usuarios.length === 0 ? 'Todavía no hay usuarios.' : 'Ningún usuario coincide con la búsqueda.'}
+          </p>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+// --- Uso de IA -----------------------------------------------------------------
+
+const TIPO_USO_LABEL: Record<string, string> = {
+  clasificacion: 'Clasificación de conversaciones',
+  generar_esquema: 'Generación de esquemas con IA',
+}
+
+const usd = (v: number, decimals: number) => `$${v.toFixed(decimals)}`
+
+function mesLabel(mes: string): string {
+  const [y, m] = mes.split('-').map(Number)
+  const corto = MESES_CORTOS[(m ?? 1) - 1] ?? ''
+  return `${corto.charAt(0).toUpperCase()}${corto.slice(1)} ${y}`
+}
+
+function mesAnterior(mes: string, n: number): string {
+  const [y, m] = mes.split('-').map(Number)
+  const d = new Date(y!, (m ?? 1) - 1 - n, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function UsoIATab() {
+  const { clientes, clienteId, setClienteId, cargado } = useClientesConSeleccion()
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+  const [uso, setUso] = useState<UsoIA | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (clienteId === '') return
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    fetchUsoIA(clienteId, { desde: desde || undefined, hasta: hasta || undefined })
+      .then((res) => {
+        if (!cancelled) setUso(res)
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMsg(e, 'No se pudo cargar el uso de IA'))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [clienteId, desde, hasta])
+
+  // Un total por mes (sumando todos los modelos) — la tabla de abajo ya
+  // desglosa por modelo, esto es para ver la tendencia de gasto en el tiempo.
+  // Se muestran al menos los 6 meses que terminan en el último con datos, para
+  // que uno o dos meses sueltos no ocupen todo el ancho.
+  const meses = useMemo(() => {
+    if (!uso || uso.por_mes.length === 0) return []
+    const acumulado = new Map<string, { costo: number; incompleto: boolean }>()
+    for (const f of uso.por_mes) {
+      const entrada = acumulado.get(f.mes) ?? { costo: 0, incompleto: false }
+      if (f.costo_usd != null) entrada.costo += f.costo_usd
+      else entrada.incompleto = true
+      acumulado.set(f.mes, entrada)
+    }
+    const conDatos = Array.from(acumulado.keys()).sort()
+    const ultimo = conDatos[conDatos.length - 1]!
+    let inicio = mesAnterior(ultimo, 5)
+    if (conDatos[0]! < inicio) inicio = conDatos[0]!
+    const lista: string[] = []
+    for (let m = inicio; m <= ultimo; m = mesAnterior(m, -1)) lista.push(m)
+    return lista.map((mes) => ({ mes, ...(acumulado.get(mes) ?? { costo: 0, incompleto: false }), conDatos: acumulado.has(mes) }))
+  }, [uso])
+  const maxCosto = Math.max(...meses.map((m) => m.costo), 0)
+  const algunMesIncompleto = meses.some((m) => m.incompleto)
+
+  const filas = uso?.filas ?? []
+  const tokensEntrada = filas.reduce((a, f) => a + f.tokens_prompt, 0)
+  const tokensSalida = filas.reduce((a, f) => a + f.tokens_completion, 0)
+  const llamadas = filas.reduce((a, f) => a + f.llamadas, 0)
+  const clasif = filas.filter((f) => f.tipo === 'clasificacion')
+  const llamadasClasif = clasif.reduce((a, f) => a + f.llamadas, 0)
+  const costoClasif = clasif.every((f) => f.costo_usd != null) ? clasif.reduce((a, f) => a + (f.costo_usd ?? 0), 0) : null
+  const esquemas = filas.filter((f) => f.tipo === 'generar_esquema').reduce((a, f) => a + f.llamadas, 0)
+
+  const kpis = [
+    {
+      label: 'Tokens consumidos',
+      value: formatNumber(uso?.tokens_totales ?? 0),
+      hint: `${formatNumber(tokensEntrada)} entrada · ${formatNumber(tokensSalida)} salida`,
+    },
+    {
+      label: 'Costo estimado',
+      value: uso?.costo_total_usd != null ? usd(uso.costo_total_usd, 2) : '—',
+      hint:
+        uso && uso.costo_total_usd == null && filas.length > 0
+          ? 'Algún modelo no tiene precio conocido'
+          : `USD · ${desde || hasta ? 'período seleccionado' : 'todo el período'}`,
+    },
+    {
+      label: 'Llamadas a la IA',
+      value: formatNumber(llamadas),
+      hint: `${formatNumber(llamadasClasif)} clasificaciones · ${formatNumber(esquemas)} esquemas`,
+    },
+    {
+      label: 'Costo por conversación',
+      value: costoClasif != null && llamadasClasif > 0 ? usd(costoClasif / llamadasClasif, 4) : '—',
+      hint: 'Promedio de las clasificadas por IA',
+    },
+  ]
+
+  if (cargado && clientes.length === 0) return <SinClientes />
+
+  return (
+    <div className="flex flex-col gap-4">
+      <section className="surface p-2.5 flex items-center justify-between gap-3 flex-wrap">
+        <ClienteSelect clientes={clientes} value={clienteId} onChange={setClienteId} label="Cliente" />
+        <div className="flex items-center gap-3">
+          {loading && <span className="text-xs text-ink-3">Cargando…</span>}
+          <DateRangeField
+            desde={desde}
+            hasta={hasta}
+            onChange={(p) => {
+              if (p.desde !== undefined) setDesde(p.desde)
+              if (p.hasta !== undefined) setHasta(p.hasta)
+            }}
+          />
+        </div>
+      </section>
+
+      {error && <p className="m-0 text-[13px] text-bad-fg">{error}</p>}
+
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3.5">
+        {kpis.map((k) => (
+          <div key={k.label} className="surface flex flex-col gap-3 p-[18px]">
+            <span className="text-[13px] font-semibold text-ink-2">{k.label}</span>
+            <span className="text-[28px] font-bold tracking-[-.03em] leading-none text-ink tabular-nums">{k.value}</span>
+            <span className="text-xs text-ink-3">{k.hint}</span>
+          </div>
+        ))}
+      </div>
+
+      <Card>
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <h2 className="m-0 text-[15px] font-bold text-ink">Gasto por mes</h2>
+          <span className="text-xs text-ink-3">USD estimado</span>
+        </div>
+        {meses.length === 0 ? (
+          <p className="m-0 text-[13px] text-ink-3 py-8 text-center">No hay uso de IA registrado en este rango.</p>
+        ) : (
+          <div>
+            <div
+              className="grid gap-4 items-end h-[220px] pb-1 border-b border-line-soft bg-[linear-gradient(var(--border-soft)_1px,transparent_1px)] bg-[length:100%_25%]"
+              style={{ gridTemplateColumns: `repeat(${meses.length}, minmax(0, 1fr))` }}
+            >
+              {meses.map((m, i) => (
+                <div key={m.mes} className="flex flex-col items-center justify-end gap-1.5 h-full" title={m.incompleto ? 'Parcial: incluye un modelo sin precio conocido' : undefined}>
+                  <span className={`text-xs font-semibold tabular-nums ${m.conDatos ? 'text-ink' : 'text-ink-3'}`}>
+                    {m.conDatos ? `${usd(m.costo, 2)}${m.incompleto ? '*' : ''}` : '—'}
+                  </span>
+                  <div
+                    className="w-[min(56px,100%)] min-h-[3px] rounded-[8px_8px_3px_3px] transition-[height] duration-[400ms] ease-[cubic-bezier(.2,.8,.2,1)]"
+                    style={{
+                      height: maxCosto > 0 ? `${((m.costo / (maxCosto * 1.15)) * 100).toFixed(1)}%` : '0%',
+                      background: !m.conDatos
+                        ? 'var(--surface-2)'
+                        : i === meses.length - 1
+                          ? 'var(--accent)'
+                          : 'color-mix(in srgb, var(--accent) 55%, var(--surface))',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="grid gap-4 mt-1.5" style={{ gridTemplateColumns: `repeat(${meses.length}, minmax(0, 1fr))` }}>
+              {meses.map((m) => (
+                <span key={m.mes} className="text-center text-xs text-ink-3">
+                  {mesLabel(m.mes)}
+                </span>
+              ))}
+            </div>
+            {algunMesIncompleto && (
+              <p className="m-0 mt-3 text-xs text-ink-3">
+                * Parcial: incluye un modelo sin precio conocido, así que el costo real es mayor al mostrado.
+              </p>
+            )}
+          </div>
+        )}
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="px-5 py-4 border-b border-line-soft">
+          <h2 className="m-0 text-[15px] font-bold text-ink">Detalle por modelo</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] border-collapse text-[13px]">
+            <thead>
+              <tr>
+                <Th first>Modelo</Th>
+                <Th>Uso</Th>
+                <Th align="right">Llamadas</Th>
+                <Th align="right">Tokens entrada</Th>
+                <Th align="right">Tokens salida</Th>
+                <Th align="right" last>
+                  Costo estimado
+                </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((f, i) => (
+                <tr key={i} className="border-t border-line-soft">
+                  <td className="py-4 pl-5 pr-3">
+                    <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-surface-2 font-mono text-xs text-ink">
+                      <Bot size={13} className="text-accent" />
+                      {f.modelo}
+                    </span>
+                  </td>
+                  <td className="py-4 px-3 text-ink-2">{TIPO_USO_LABEL[f.tipo] ?? f.tipo}</td>
+                  <td className="py-4 px-3 text-right tabular-nums text-ink">{formatNumber(f.llamadas)}</td>
+                  <td className="py-4 px-3 text-right tabular-nums text-ink">{formatNumber(f.tokens_prompt)}</td>
+                  <td className="py-4 px-3 text-right tabular-nums text-ink">{formatNumber(f.tokens_completion)}</td>
+                  <td className="py-4 pl-3 pr-5 text-right tabular-nums font-bold text-ink">
+                    {f.costo_usd != null ? usd(f.costo_usd, 4) : <span className="font-normal text-ink-3">no disponible</span>}
                   </td>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        {usuarios.length === 0 && <p className="p-4 text-sm text-gray-400">No users yet.</p>}
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {uso && filas.length === 0 && (
+          <p className="m-0 px-5 py-6 text-[13px] text-ink-3 text-center">Este cliente todavía no tiene uso de IA registrado.</p>
+        )}
+        <div className="flex items-start gap-2 px-5 py-3 border-t border-line-soft text-xs leading-normal text-ink-3">
+          <Info size={14} className="shrink-0 mt-0.5" />
+          <span>
+            Precios de referencia (ver <code className="font-mono text-[11.5px] text-ink-2">analysis/pricing.py</code>). Verifícalos
+            contra la página oficial de precios de OpenAI si necesitas el dato exacto.
+          </span>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// --- Mantenimiento (borrado de conversaciones por fecha) ---------------------
+
+function MantenimientoTab() {
+  const { clientes, clienteId, setClienteId, cargado } = useClientesConSeleccion()
+  const [fecha, setFecha] = useState('')
+  const [confirmando, setConfirmando] = useState(false)
+  const [textoConfirmacion, setTextoConfirmacion] = useState('')
+  const [eliminando, setEliminando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [resultado, setResultado] = useState<{ cliente: string; fecha: string; conversaciones: number; mensajes: number } | null>(
+    null,
+  )
+
+  const clienteSeleccionado = clientes.find((c) => c.id_cliente === clienteId)
+  const nombreCliente = clienteSeleccionado?.nombre_cliente ?? ''
+  const confirmado = textoConfirmacion.trim() === nombreCliente
+
+  const handleConfirmar = async () => {
+    if (clienteId === '' || !fecha || !confirmado) return
+    setEliminando(true)
+    setError(null)
+    try {
+      const res = await eliminarConversacionesPorFecha(clienteId, fecha)
+      setResultado({ cliente: nombreCliente, fecha, conversaciones: res.conversaciones_eliminadas, mensajes: res.mensajes_eliminados })
+      setConfirmando(false)
+    } catch (e) {
+      setError(errorMsg(e, 'No se pudieron eliminar las conversaciones'))
+    } finally {
+      setEliminando(false)
+    }
+  }
+
+  if (cargado && clientes.length === 0) return <SinClientes />
+
+  return (
+    <div className="flex flex-col gap-4 max-w-[880px]">
+      <Card className="overflow-hidden">
+        <div className="flex items-start gap-3.5 p-5 border-b border-line-soft">
+          <span className="w-10 h-10 rounded-xl bg-bad-bg text-bad-fg flex items-center justify-center shrink-0">
+            <Trash2 size={18} />
+          </span>
+          <div>
+            <h2 className="m-0 text-[15px] font-bold text-ink">Eliminar conversaciones por fecha</h2>
+            <p className="mt-1 mb-0 text-[13px] leading-[1.6] text-ink-2">
+              Pensado para descartar una carga con datos incorrectos y volver a subir el archivo.
+            </p>
+          </div>
+        </div>
+        <div className="p-5 flex flex-col gap-4">
+          <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-bad-bg text-bad-fg text-[12.5px] leading-[1.55]">
+            <AlertTriangle size={16} className="shrink-0 mt-px" />
+            <span>
+              Se eliminan permanentemente las conversaciones, sus mensajes y su análisis para la fecha y el cliente elegidos.{' '}
+              <strong className="font-bold">No se puede deshacer.</strong> El uso de IA ya registrado no se borra.
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-3 items-end [&>label]:flex-[1_1_200px]">
+            <Field label="Cliente">
+              <ClienteSelect
+                clientes={clientes}
+                value={clienteId}
+                onChange={(id) => {
+                  setClienteId(id)
+                  setResultado(null)
+                }}
+              />
+            </Field>
+            <Field label="Fecha">
+              <span className="field">
+                <input
+                  type="date"
+                  value={fecha}
+                  onChange={(e) => {
+                    setFecha(e.target.value)
+                    setResultado(null)
+                  }}
+                />
+              </span>
+            </Field>
+            <button
+              type="button"
+              onClick={() => {
+                setTextoConfirmacion('')
+                setError(null)
+                setResultado(null)
+                setConfirmando(true)
+              }}
+              disabled={clienteId === '' || !fecha}
+              className="btn-danger"
+            >
+              <Trash2 size={15} />
+              Eliminar conversaciones
+            </button>
+          </div>
+          {resultado && (
+            <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-[10px] bg-ok-bg text-ok-fg text-[12.5px] font-medium animate-estia-fade">
+              <Check size={15} strokeWidth={2.5} className="shrink-0 mt-px" />
+              <span>
+                Se eliminaron {formatNumber(resultado.conversaciones)} conversación(es) y {formatNumber(resultado.mensajes)} mensaje(s)
+                de {resultado.cliente} del {formatLongDate(parseLocalDate(resultado.fecha))}. Ya puedes volver a subir el archivo
+                de esa fecha.
+              </span>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Modal open={confirmando} onClose={() => !eliminando && setConfirmando(false)}>
+        <div className="flex flex-col gap-3.5">
+          <span className="w-11 h-11 rounded-xl bg-bad-bg text-bad-fg flex items-center justify-center">
+            <AlertTriangle size={20} />
+          </span>
+          <div>
+            <h3 className="m-0 text-base font-bold text-ink">
+              ¿Eliminar conversaciones del {fecha ? formatLongDate(parseLocalDate(fecha)) : ''}?
+            </h3>
+            <p className="mt-1.5 mb-0 text-[13px] leading-[1.6] text-ink-2">
+              Se borrarán todas las conversaciones de <strong className="text-ink">{nombreCliente}</strong> en esa fecha. Escribe el
+              nombre del cliente para confirmar.
+            </p>
+          </div>
+          <input
+            value={textoConfirmacion}
+            onChange={(e) => setTextoConfirmacion(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleConfirmar()}
+            placeholder={nombreCliente}
+            autoFocus
+            className="h-10 px-3 rounded-[10px] border border-line bg-bg font-mono text-[13px] text-ink outline-0 focus:border-accent"
+          />
+          {error && <p className="m-0 text-[13px] text-bad-fg">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setConfirmando(false)} disabled={eliminando} className="btn-secondary">
+              Cancelar
+            </button>
+            <button type="button" onClick={handleConfirmar} disabled={!confirmado || eliminando} className="btn-danger h-[38px]">
+              {eliminando ? 'Eliminando…' : 'Eliminar definitivamente'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
